@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import _ from "lodash";
 import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from "recharts";
+import { auth, setToken, clearToken, isAuthenticated, dashboard, leadsApi, appointmentsApi, campaignsApi, proposalsApi, activityApi, messagesApi } from "./api.js";
 
 // ============================================================
 // CATALYST — Agentic AI Sales & Lead Revival Platform
@@ -416,20 +417,37 @@ function LoginPage({ onLogin }) {
   const [email, setEmail] = useState("demo@leviosai.com");
   const [pass, setPass] = useState("catalyst2026");
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleLogin = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await auth.login(email, pass);
+      setToken(res.token);
+      onLogin(res.user);
+    } catch (err) {
+      setError(err.message || "Invalid credentials");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: `radial-gradient(ellipse at 30% 20%, ${COLORS.orangeGlow}, transparent 60%), ${COLORS.bg}` }}>
       <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 20, padding: "48px 40px", width: 400, textAlign: "center" }}>
         <Logo />
         <p style={{ color: COLORS.textMuted, fontSize: 13, margin: "12px 0 32px", lineHeight: 1.5 }}>Agentic AI Sales & Lead Revival Platform</p>
+        {error && <div style={{ padding: "8px 12px", borderRadius: 8, background: `${COLORS.red}22`, color: COLORS.red, fontSize: 12, marginBottom: 16 }}>{error}</div>}
         <div style={{ textAlign: "left", marginBottom: 16 }}>
           <label style={{ fontSize: 12, color: COLORS.textMuted, fontWeight: 500, display: "block", marginBottom: 6 }}>Email</label>
-          <input style={S.input} value={email} onChange={(e) => setEmail(e.target.value)} />
+          <input style={S.input} value={email} onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleLogin()} />
         </div>
         <div style={{ textAlign: "left", marginBottom: 24 }}>
           <label style={{ fontSize: 12, color: COLORS.textMuted, fontWeight: 500, display: "block", marginBottom: 6 }}>Password</label>
-          <input style={S.input} type="password" value={pass} onChange={(e) => setPass(e.target.value)} />
+          <input style={S.input} type="password" value={pass} onChange={(e) => setPass(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleLogin()} />
         </div>
-        <button style={{ ...S.btn("primary"), width: "100%", padding: "12px 20px", fontSize: 14, opacity: loading ? 0.7 : 1 }} onClick={() => { setLoading(true); setTimeout(() => { setLoading(false); onLogin(); }, 800); }}>
+        <button style={{ ...S.btn("primary"), width: "100%", padding: "12px 20px", fontSize: 14, opacity: loading ? 0.7 : 1 }} onClick={handleLogin} disabled={loading}>
           {loading ? "Signing in..." : "Sign In"}
         </button>
         <p style={{ color: COLORS.textDim, fontSize: 11, marginTop: 20 }}>Powered by <span style={{ color: COLORS.orange }}>Leviosai, Inc.</span> — Part of The Reaction Stack</p>
@@ -442,7 +460,15 @@ function LoginPage({ onLogin }) {
 // DASHBOARD — with Features 1, 3, 5
 // ============================================================
 function DashboardPage({ setPage }) {
-  const totalAppts = 46; // current month including past completions
+  const [stats, setStats] = useState(null);
+  const [activity, setActivity] = useState([]);
+
+  useEffect(() => {
+    dashboard.getStats().then(setStats).catch(console.error);
+    activityApi.list({ limit: 7 }).then(setActivity).catch(console.error);
+  }, []);
+
+  const totalAppts = stats?.upcomingAppointments?.length || 0;
   const revivalData = [
     { month: "Oct", revived: 45, appts: 15, closed: 4 },
     { month: "Nov", revived: 62, appts: 21, closed: 7 },
@@ -477,13 +503,12 @@ function DashboardPage({ setPage }) {
       <TierSuggestionBanner totalAppts={totalAppts} hasAliv={true} hasSalesTool={false} onAction={(t) => setPage(t === "sales" ? "Proposals & Sales" : "Billing")} />
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16, marginBottom: 24 }}>
-        <StatCard label="Leads Revived" value="104" change={14.3} color={COLORS.orange} icon="🔥" />
-        <StatCard label="Appointments Set" value="34" change={13.3} color={COLORS.green} icon="📅" />
-        <StatCard label="Revival Rate" value="15.2" suffix="%" change={2.1} color={COLORS.blue} icon="📈" />
-        {/* FEATURE 1: Show-up stats */}
-        <StatCard label="Show-Up Rate" value="87" suffix="%" change={3.2} color={COLORS.teal} icon="✅" />
-        <StatCard label="No-Show Credits" value="$600" color={COLORS.yellow} icon="💸" />
-        <StatCard label="Revenue Generated" value="$13,600" change={23.5} color={COLORS.purple} icon="💰" />
+        <StatCard label="Total Leads" value={stats?.totalLeads || 0} color={COLORS.orange} icon="🔥" />
+        <StatCard label="Hot Leads" value={stats?.hotLeads || 0} color={COLORS.green} icon="📅" />
+        <StatCard label="Won Deals" value={stats?.wonDeals || 0} color={COLORS.blue} icon="📈" />
+        <StatCard label="Pipeline Value" value={`$${((stats?.pipelineValue || 0) / 1000).toFixed(0)}K`} color={COLORS.teal} icon="💰" />
+        <StatCard label="Won Revenue" value={`$${((stats?.wonRevenue || 0) / 1000).toFixed(0)}K`} color={COLORS.yellow} icon="💸" />
+        <StatCard label="Show-Up Rate" value="87" suffix="%" change={3.2} color={COLORS.purple} icon="✅" />
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 20, marginBottom: 20 }}>
@@ -576,12 +601,37 @@ function DashboardPage({ setPage }) {
 // LEADS — with Features 2, 3
 // ============================================================
 function LeadsPage() {
-  const [leads] = useState(SAMPLE_LEADS);
+  const [leads, setLeads] = useState([]);
   const [filter, setFilter] = useState("All");
   const [search, setSearch] = useState("");
   const [showUpload, setShowUpload] = useState(false);
   const [selectedLead, setSelectedLead] = useState(null);
   const [showReplay, setShowReplay] = useState(false);
+
+  const statusMap = { "New": "new", "Dead": "lost", "Aged": "contacted", "Revived": "qualified", "Appointment Set": "proposal" };
+  const statusLabelMap = { "new": "New", "lost": "Dead", "contacted": "Aged", "qualified": "Revived", "proposal": "Appointment Set", "won": "Revived" };
+
+  const fetchLeads = useCallback(() => {
+    const filters = {};
+    if (filter !== "All" && statusMap[filter]) filters.status = statusMap[filter];
+    if (search) filters.search = search;
+    leadsApi.list(filters).then((data) => {
+      setLeads(data.map(l => ({
+        ...l,
+        name: `${l.firstName} ${l.lastName}`,
+        status: statusLabelMap[l.status] || l.status,
+        score: l.aiScore || 0,
+        baseScore: l.aiScore || 50,
+        decayRate: -1.5,
+        marketBoost: 0,
+        conversations: [],
+        source: l.source || "—",
+        lastContact: l.lastContactedAt ? new Date(l.lastContactedAt).toISOString().split("T")[0] : "—",
+      })));
+    }).catch(console.error);
+  }, [filter, search]);
+
+  useEffect(() => { fetchLeads(); }, [fetchLeads]);
 
   const statusColors = { "Dead": COLORS.red, "Aged": COLORS.yellow, "Revived": COLORS.blue, "New": COLORS.green, "Appointment Set": COLORS.purple };
   const filters = ["All", "Dead", "Aged", "Revived", "New", "Appointment Set"];
@@ -857,7 +907,25 @@ function CampaignsPage() {
 // APPOINTMENTS — with Feature 1 (Show-Up Guarantee)
 // ============================================================
 function AppointmentsPage() {
-  const [appointments, setAppointments] = useState(SAMPLE_APPOINTMENTS);
+  const [apptData, setApptData] = useState([]);
+  useEffect(() => {
+    appointmentsApi.list().then((data) => {
+      setApptData(data.map(a => ({
+        id: a.id,
+        lead: `${a.leadFirstName || ""} ${a.leadLastName || ""}`.trim() || a.title,
+        date: new Date(a.scheduledAt).toISOString().split("T")[0],
+        time: new Date(a.scheduledAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        type: "Consultation",
+        rep: "TBD",
+        status: a.status === "scheduled" ? "Confirmed" : a.status === "completed" ? "Completed" : a.status,
+        product: "—",
+        showed: a.status === "completed" ? true : null,
+        creditApplied: false,
+      })));
+    }).catch(console.error);
+  }, []);
+  const [appointments, setAppointments] = useState([]);
+  useEffect(() => { if (apptData.length) setAppointments(apptData); }, [apptData]);
   const [showGuaranteeInfo, setShowGuaranteeInfo] = useState(false);
 
   const toggleShowUp = (id, showed) => {
@@ -1576,10 +1644,19 @@ function SettingsPage() {
 // MAIN APP
 // ============================================================
 export default function CatalystApp() {
-  const [loggedIn, setLoggedIn] = useState(false);
+  const [loggedIn, setLoggedIn] = useState(isAuthenticated());
+  const [user, setUser] = useState(null);
   const [page, setPage] = useState("Dashboard");
 
-  if (!loggedIn) return <LoginPage onLogin={() => setLoggedIn(true)} />;
+  useEffect(() => {
+    if (isAuthenticated() && !user) {
+      auth.me().then(setUser).catch(() => { clearToken(); setLoggedIn(false); });
+    }
+  }, [loggedIn]);
+
+  const handleLogout = () => { clearToken(); setLoggedIn(false); setUser(null); };
+
+  if (!loggedIn) return <LoginPage onLogin={(u) => { setUser(u); setLoggedIn(true); }} />;
 
   const navItems = [
     { section: "Overview" },
@@ -1634,9 +1711,9 @@ export default function CatalystApp() {
           })}
         </div>
         <div style={{ padding: "16px 20px", borderTop: `1px solid ${COLORS.border}`, display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ width: 32, height: 32, borderRadius: 8, background: `linear-gradient(135deg, ${COLORS.orange}, ${COLORS.orangeDark})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 700, color: "#fff" }}>S</div>
-          <div style={{ flex: 1 }}><div style={{ fontSize: 12, fontWeight: 600 }}>SunPower Solar</div><div style={{ fontSize: 10, color: COLORS.textMuted }}>Growth Plan</div></div>
-          <button style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer", fontSize: 16 }} onClick={() => setLoggedIn(false)}>⏻</button>
+          <div style={{ width: 32, height: 32, borderRadius: 8, background: `linear-gradient(135deg, ${COLORS.orange}, ${COLORS.orangeDark})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 700, color: "#fff" }}>{(user?.firstName || "U")[0]}</div>
+          <div style={{ flex: 1 }}><div style={{ fontSize: 12, fontWeight: 600 }}>{user ? `${user.firstName} ${user.lastName}` : "User"}</div><div style={{ fontSize: 10, color: COLORS.textMuted }}>{user?.email || "Growth Plan"}</div></div>
+          <button style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer", fontSize: 16 }} onClick={handleLogout}>⏻</button>
         </div>
       </div>
       <div style={S.main}>
