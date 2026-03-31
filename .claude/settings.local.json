@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(nslookup db.vkzwicscwoelgrapiuxq.supabase.co)",
+      "Bash(nslookup aws-0-us-east-1.pooler.supabase.com)",
+      "Bash(node -e \"const u = new URL\\(''postgresql://postgres.vkzwicscwoelgrapiuxq:hCvUdCmb5HSJJBL@aws-1-us-east-1.pooler.supabase.com:6543/postgres''\\); console.log\\(''user:'', u.username\\); console.log\\(''pass:'', u.password\\); console.log\\(''host:'', u.hostname\\); console.log\\(''port:'', u.port\\);\")",
+      "Bash(node -e \"const pg = require\\(''pg''\\); const p = new pg.Pool\\({user:''postgres.vkzwicscwoelgrapiuxq'', password:''test'', host:''localhost'', port:5432, database:''test''}\\); console.log\\(p.options.user\\);\")",
+      "Bash(node -e \":*)",
+      "Bash(PGPASSWORD='p3iwzh4ZO0wkPTOd' psql -h aws-1-us-east-1.pooler.supabase.com -p 6543 -U postgres.vkzwicscwoelgrapiuxq -d postgres --no-password -c \"SELECT 1;\")",
+      "Bash(npx tsx -e \":*)",
+      "Bash(lsof -ti:3000)",
+      "Bash(xargs kill:*)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/)",
+      "Bash(curl -s http://localhost:3000/)",
+      "Bash(npx drizzle-kit:*)",
+      "Bash(npx tsx:*)",
+      "Bash(git -C /Users/sydneykelly/Downloads/leviosai status)",
+      "Bash(git -C /Users/sydneykelly/Downloads/leviosai remote -v)",
+      "Bash(git -C /Users/sydneykelly/.openclaw/workspace/leviosai remote -v)",
+      "Bash(git init:*)",
+      "Bash(git add:*)"
+    ]
+  }
+}
