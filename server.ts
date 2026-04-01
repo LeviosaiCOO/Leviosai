@@ -6,6 +6,8 @@ import "dotenv/config";
 import { checkDatabaseConnection, closeDatabaseConnection } from "./lib/db.js";
 import apiRoutes from "./routes/api.js";
 import authRoutes from "./routes/auth.js";
+import messagingRoutes from "./routes/messaging.js";
+import aiRoutes from "./routes/ai.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -20,6 +22,8 @@ app.use(express.urlencoded({ extended: true }));
 // API Routes
 app.use(authRoutes);
 app.use(apiRoutes);
+app.use(messagingRoutes);
+app.use(aiRoutes);
 
 async function setupVite() {
   if (isProd) {

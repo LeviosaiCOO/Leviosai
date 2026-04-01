@@ -42,7 +42,10 @@
       "Bash(railway up:*)",
       "Bash(railway vars:*)",
       "Bash(railway domain:*)",
-      "Bash(railway logs:*)"
+      "Bash(railway logs:*)",
+      "Bash(curl -s http://localhost:3000/api/integrations/status)",
+      "Bash(python3 -m json.tool)",
+      "Bash(curl -s http://localhost:3000/api/ai/status)"
     ]
   }
 }

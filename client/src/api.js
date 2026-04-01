@@ -119,6 +119,30 @@ export const organizationsApi = {
   create: (data) => request("/api/organizations", { method: "POST", body: JSON.stringify(data) }),
 };
 
+// Messaging (Twilio + SendGrid)
+export const messagingApi = {
+  sendSMS: (leadId, message, aiGenerated = false) =>
+    request(`/api/leads/${leadId}/sms`, { method: "POST", body: JSON.stringify({ message, aiGenerated }) }),
+  sendEmail: (leadId, subject, body, aiGenerated = false) =>
+    request(`/api/leads/${leadId}/email`, { method: "POST", body: JSON.stringify({ subject, body, aiGenerated }) }),
+  initiateCall: (leadId) =>
+    request(`/api/leads/${leadId}/call`, { method: "POST", body: JSON.stringify({}) }),
+  integrationStatus: () => request("/api/integrations/status"),
+};
+
+// AI (Claude)
+export const aiApi = {
+  scoreLead: (leadId, notes) =>
+    request(`/api/leads/${leadId}/score`, { method: "POST", body: JSON.stringify({ notes }) }),
+  generateMessage: (leadId, channel, context) =>
+    request(`/api/leads/${leadId}/generate-message`, { method: "POST", body: JSON.stringify({ channel, context }) }),
+  handleObjection: (objection, leadContext) =>
+    request("/api/ai/objection", { method: "POST", body: JSON.stringify({ objection, leadContext }) }),
+  scoreAll: () =>
+    request("/api/leads/score-all", { method: "POST", body: JSON.stringify({}) }),
+  status: () => request("/api/ai/status"),
+};
+
 // Health
 export const health = {
   check: () => request("/api/health"),

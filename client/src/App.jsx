@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import _ from "lodash";
 import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from "recharts";
-import { auth, setToken, clearToken, isAuthenticated, dashboard, leadsApi, appointmentsApi, campaignsApi, proposalsApi, activityApi, messagesApi } from "./api.js";
+import { auth, setToken, clearToken, isAuthenticated, dashboard, leadsApi, appointmentsApi, campaignsApi, proposalsApi, activityApi, messagesApi, messagingApi, aiApi } from "./api.js";
 
 // ============================================================
 // CATALYST — Agentic AI Sales & Lead Revival Platform
@@ -702,9 +702,19 @@ function LeadsPage() {
                 </td>
                 <td style={S.td}>
                   <div style={{ display: "flex", gap: 6 }} onClick={(e) => e.stopPropagation()}>
-                    <button style={{ ...S.btn("ghost"), padding: "5px 10px", fontSize: 11 }}>📞</button>
-                    <button style={{ ...S.btn("ghost"), padding: "5px 10px", fontSize: 11 }}>💬</button>
-                    <button style={{ ...S.btn("ghost"), padding: "5px 10px", fontSize: 11 }}>✉️</button>
+                    <button style={{ ...S.btn("ghost"), padding: "5px 10px", fontSize: 11 }} onClick={async () => {
+                      try { await messagingApi.initiateCall(l.id); alert("Call initiated!"); } catch (e) { alert(e.message); }
+                    }}>📞</button>
+                    <button style={{ ...S.btn("ghost"), padding: "5px 10px", fontSize: 11 }} onClick={async () => {
+                      const msg = prompt(`SMS to ${l.name}:`);
+                      if (msg) { try { await messagingApi.sendSMS(l.id, msg); alert("SMS sent!"); } catch (e) { alert(e.message); } }
+                    }}>💬</button>
+                    <button style={{ ...S.btn("ghost"), padding: "5px 10px", fontSize: 11 }} onClick={async () => {
+                      const subject = prompt(`Email subject for ${l.name}:`);
+                      if (!subject) return;
+                      const body = prompt("Email body:");
+                      if (body) { try { await messagingApi.sendEmail(l.id, subject, body); alert("Email sent!"); } catch (e) { alert(e.message); } }
+                    }}>✉️</button>
                   </div>
                 </td>
               </tr>
@@ -791,9 +801,28 @@ function LeadsPage() {
                   </div>
                 </div>
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                  <button style={S.btn("primary")}>📞 Voice AI Call</button>
-                  <button style={S.btn("secondary")}>💬 Send SMS</button>
-                  <button style={S.btn("secondary")}>✉️ Send Email</button>
+                  <button style={S.btn("primary")} onClick={async () => {
+                    try { const r = await messagingApi.initiateCall(selectedLead.id); alert(r.twilioConfigured ? `Call initiated! SID: ${r.call.sid}` : "Call logged. Configure Twilio in .env to make real calls."); } catch (e) { alert(e.message); }
+                  }}>📞 Voice AI Call</button>
+                  <button style={S.btn("secondary")} onClick={async () => {
+                    try {
+                      const gen = await aiApi.generateMessage(selectedLead.id, "sms");
+                      const msg = prompt("AI-generated SMS (edit if needed):", gen.message);
+                      if (msg) { await messagingApi.sendSMS(selectedLead.id, msg, true); alert("SMS sent!"); fetchLeads(); }
+                    } catch (e) { alert(e.message); }
+                  }}>💬 Send SMS</button>
+                  <button style={S.btn("secondary")} onClick={async () => {
+                    try {
+                      const gen = await aiApi.generateMessage(selectedLead.id, "email");
+                      const subject = prompt("Subject:", gen.subject || "Following up");
+                      if (!subject) return;
+                      const body = prompt("Email body (AI-generated, edit if needed):", gen.message);
+                      if (body) { await messagingApi.sendEmail(selectedLead.id, subject, body, true); alert("Email sent!"); fetchLeads(); }
+                    } catch (e) { alert(e.message); }
+                  }}>✉️ Send Email</button>
+                  <button style={S.btn("teal")} onClick={async () => {
+                    try { const r = await aiApi.scoreLead(selectedLead.id); alert(`AI Score: ${r.score}/100 | Temp: ${r.temperature}\n${r.reasoning}`); fetchLeads(); setSelectedLead(null); } catch (e) { alert(e.message); }
+                  }}>🧠 AI Score</button>
                   <button style={S.btn("success")}>📅 Set Appointment</button>
                 </div>
               </>
