@@ -139,9 +139,9 @@ export async function sendOutbound(sessionId: string): Promise<{ message: Sandbo
 
   // ─── Generate AI message (simulates SmsAgent) ────────────────────
   const stepPrompts: Record<number, string> = {
-    1: `First contact SMS for a ${session.lead.industry} lead. Be warm and casual. Mention their name (${session.lead.firstName}) and that they previously showed interest. Keep it under 160 chars. Include a soft CTA. Sound like a real person texting, not a bot.`,
-    2: `Follow-up SMS (they didn't respond to the first). Reference that you reached out before. Add a value prop or social proof for ${session.lead.industry}. Keep it conversational, under 160 chars.`,
-    3: `Final SMS in the sequence. Create gentle urgency without being pushy. Mention this is the last follow-up. Offer easy opt-out. Under 160 chars.`,
+    1: `First contact SMS for a ${session.lead.industry} lead. Be warm and casual. Mention their name (${session.lead.firstName}) and that they previously showed interest. Keep it to 2-3 sentences. Include a soft CTA. Sound like a real person texting, not a bot.`,
+    2: `Follow-up SMS (they didn't respond to the first). Reference that you reached out before. Add a value prop or social proof for ${session.lead.industry}. Keep it conversational, 2-3 sentences.`,
+    3: `Final SMS in the sequence. Create gentle urgency without being pushy. Mention this is the last follow-up. Offer easy opt-out. 2-3 sentences.`,
   };
 
   const prompt = stepPrompts[Math.min(step, 3)] || stepPrompts[1];
@@ -171,7 +171,7 @@ Generate the SMS message text only:`,
     messageText = response.content[0].type === "text" ? response.content[0].text.trim() : "";
     // Strip any quotes the AI might wrap around the message
     messageText = messageText.replace(/^["']|["']$/g, "").trim();
-    if (messageText.length > 160) messageText = messageText.substring(0, 157) + "...";
+    // No hard truncation in sandbox — let demo messages read naturally
   } catch {
     messageText = step === 1
       ? `Hey ${session.lead.firstName}! This is Aria. I saw you were looking into ${session.lead.industry} services a while back. Still something you're thinking about? 😊`
@@ -419,11 +419,11 @@ export async function processReply(
     let responsePrompt: string;
     const apptDay = apptDate.toLocaleDateString("en-US", { weekday: "long" });
     if (intent === "appointment_interest") {
-      responsePrompt = `The lead wants to schedule an appointment. Be enthusiastic but not over the top. Propose a specific time: "${apptDay} at 2pm". Ask if that works for their schedule. You must include the day and time. Keep it under 160 chars.`;
+      responsePrompt = `The lead wants to schedule an appointment. Be enthusiastic but not over the top. Propose a specific time: "${apptDay} at 2pm". Ask if that works for their schedule. You must include the day and time. Keep it to 2-3 sentences.`;
     } else if (intent === "appointment_confirmed") {
       const confirmedDate = session.proposedAppointment ? new Date(session.proposedAppointment.scheduledAt) : apptDate;
       const confirmedDay = confirmedDate.toLocaleDateString("en-US", { weekday: "long" });
-      responsePrompt = `The lead just confirmed the appointment for ${confirmedDay} at 2pm. Express excitement, confirm the details, and let them know you'll send a confirmation. Be warm and brief. Keep it under 160 chars.`;
+      responsePrompt = `The lead just confirmed the appointment for ${confirmedDay} at 2pm. Express excitement, confirm the details, and let them know you'll send a confirmation. Be warm and brief. Keep it to 2-3 sentences.`;
     } else if (objectionCategory) {
       const strategies: Record<string, string> = {
         price_too_high: "Acknowledge the concern. Mention the pay-per-appointment model — they only pay for results. Pivot to value.",
@@ -434,11 +434,11 @@ export async function processReply(
         spouse_decision: "Totally get it. Offer to include both of them in a quick call. Make it easy.",
         had_bad_experience: "Empathize genuinely. Explain how your approach is different. Offer a no-risk trial.",
       };
-      responsePrompt = `The lead raised a "${objectionCategory}" objection: "${replyText}". ${strategies[objectionCategory] || "Acknowledge and redirect gently."} Keep it under 160 chars. Be human, not salesy.`;
+      responsePrompt = `The lead raised a "${objectionCategory}" objection: "${replyText}". ${strategies[objectionCategory] || "Acknowledge and redirect gently."} Keep it to 2-3 sentences. Be human, not salesy.`;
     } else if (sentiment === "positive") {
-      responsePrompt = `The lead responded positively. Keep the momentum going. Ask a qualifying question or move toward booking. Under 160 chars.`;
+      responsePrompt = `The lead responded positively. Keep the momentum going. Ask a qualifying question or move toward booking. 2-3 sentences.`;
     } else {
-      responsePrompt = `The lead sent a neutral reply. Keep the conversation going naturally. Be helpful and conversational. Under 160 chars.`;
+      responsePrompt = `The lead sent a neutral reply. Keep the conversation going naturally. Be helpful and conversational. 2-3 sentences.`;
     }
 
     const client = new Anthropic({ apiKey });
@@ -461,7 +461,7 @@ Reply as Aria (SMS text only, no quotes):`,
     responseText = response.content[0].type === "text" ? response.content[0].text.trim() : null;
     if (responseText) {
       responseText = responseText.replace(/^["']|["']$/g, "").trim();
-      if (responseText.length > 160) responseText = responseText.substring(0, 157) + "...";
+      // No hard truncation in sandbox — let demo messages read naturally
     }
   } catch {
     // Fallback responses
