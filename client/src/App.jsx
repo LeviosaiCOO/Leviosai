@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import _ from "lodash";
 import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from "recharts";
-import { auth, setToken, clearToken, isAuthenticated, dashboard, leadsApi, appointmentsApi, campaignsApi, proposalsApi, activityApi, messagesApi, messagingApi, aiApi } from "./api.js";
+import { auth, setToken, clearToken, isAuthenticated, dashboard, leadsApi, appointmentsApi, campaignsApi, proposalsApi, activityApi, messagesApi, messagingApi, aiApi, sandboxApi } from "./api.js";
 
 // ============================================================
 // CATALYST — Agentic AI Sales & Lead Revival Platform
@@ -494,9 +494,25 @@ function DashboardPage({ setPage }) {
 
   return (
     <div>
-      <div style={{ marginBottom: 24 }}>
-        <h2 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Dashboard</h2>
-        <p style={{ color: COLORS.textMuted, fontSize: 13, margin: "4px 0 0" }}>Welcome back. Here's your performance overview.</p>
+      <div style={{ marginBottom: 24, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div>
+          <h2 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Dashboard</h2>
+          <p style={{ color: COLORS.textMuted, fontSize: 13, margin: "4px 0 0" }}>Welcome back. Here's your performance overview.</p>
+        </div>
+        <button
+          onClick={() => setPage("Sandbox")}
+          style={{
+            background: `linear-gradient(135deg, ${COLORS.orange}, ${COLORS.orangeDark})`,
+            color: "#fff", border: "none", borderRadius: 10, padding: "12px 24px",
+            fontSize: 14, fontWeight: 600, cursor: "pointer", letterSpacing: 0.3,
+            boxShadow: `0 4px 20px ${COLORS.orangeGlow}`,
+            transition: "transform 0.15s, box-shadow 0.15s",
+          }}
+          onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-1px)"; e.currentTarget.style.boxShadow = `0 6px 28px ${COLORS.orangeGlow}`; }}
+          onMouseLeave={e => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = `0 4px 20px ${COLORS.orangeGlow}`; }}
+        >
+          See me in action
+        </button>
       </div>
 
       {/* FEATURE 5: Performance tier suggestion */}
@@ -936,10 +952,15 @@ function CampaignsPage() {
 // APPOINTMENTS — with Feature 1 (Show-Up Guarantee)
 // ============================================================
 function AppointmentsPage() {
-  const [apptData, setApptData] = useState([]);
+  const [appointments, setAppointments] = useState([]);
+  const [highlightId, setHighlightId] = useState(() => {
+    const hId = sessionStorage.getItem("highlight_appointment");
+    return hId ? parseInt(hId) : null;
+  });
+
   useEffect(() => {
     appointmentsApi.list().then((data) => {
-      setApptData(data.map(a => ({
+      setAppointments(data.map(a => ({
         id: a.id,
         lead: `${a.leadFirstName || ""} ${a.leadLastName || ""}`.trim() || a.title,
         date: new Date(a.scheduledAt).toISOString().split("T")[0],
@@ -953,8 +974,19 @@ function AppointmentsPage() {
       })));
     }).catch(console.error);
   }, []);
-  const [appointments, setAppointments] = useState([]);
-  useEffect(() => { if (apptData.length) setAppointments(apptData); }, [apptData]);
+
+  // Scroll to highlighted row and clear after timeout
+  useEffect(() => {
+    if (highlightId !== null && appointments.length) {
+      sessionStorage.removeItem("highlight_appointment");
+      const timer = setTimeout(() => setHighlightId(null), 6000);
+      setTimeout(() => {
+        const row = document.querySelector(`tr[data-appt-id="${highlightId}"]`);
+        if (row) row.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [highlightId, appointments]);
   const [showGuaranteeInfo, setShowGuaranteeInfo] = useState(false);
 
   const toggleShowUp = (id, showed) => {
@@ -1002,8 +1034,8 @@ function AppointmentsPage() {
           </tr></thead>
           <tbody>
             {appointments.map((a) => (
-              <tr key={a.id}>
-                <td style={S.td}><span style={{ fontWeight: 600 }}>{a.lead}</span></td>
+              <tr key={a.id} data-appt-id={a.id} style={a.id === highlightId ? { animation: "highlightPulse 1.5s ease-in-out 3" } : undefined}>
+                <td style={S.td}><span style={{ fontWeight: 600 }}>{a.lead}</span>{a.id === highlightId && <span style={{ marginLeft: 8, fontSize: 10, padding: "2px 8px", borderRadius: 4, background: `${COLORS.green}22`, color: COLORS.green, fontWeight: 600, animation: "slideUp 0.5s ease-out" }}>NEW</span>}</td>
                 <td style={S.td}><div style={{ fontSize: 13 }}>{a.date}</div><div style={{ fontSize: 12, color: COLORS.orange, fontWeight: 600 }}>{a.time}</div></td>
                 <td style={S.td}><span style={S.tag(COLORS.textMuted)}>{a.type}</span></td>
                 <td style={S.td}>{a.rep}</td>
@@ -1670,6 +1702,331 @@ function SettingsPage() {
 }
 
 // ============================================================
+// SANDBOX — Interactive AI Conversation Demo
+// ============================================================
+function SandboxPage({ setPage }) {
+  const [scenarios, setScenarios] = useState([]);
+  const [session, setSession] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [agentActions, setAgentActions] = useState([]);
+  const [lead, setLead] = useState(null);
+  const [replyText, setReplyText] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [sessionStatus, setSessionStatus] = useState("active");
+  const [showEvents, setShowEvents] = useState(false);
+  const [appointment, setAppointment] = useState(null);
+  const [showCelebration, setShowCelebration] = useState(false);
+  const [events, setEvents] = useState([]);
+  const chatEndRef = useRef(null);
+
+  useEffect(() => {
+    sandboxApi.scenarios().then(r => setScenarios(r.scenarios || [])).catch(console.error);
+  }, []);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  const startScenario = async (scenarioId) => {
+    setLoading(true);
+    setMessages([]);
+    setAgentActions([]);
+    setEvents([]);
+    try {
+      const res = await sandboxApi.createSession(scenarioId);
+      setSession(res.session);
+      setLead(res.session.lead);
+      setSessionStatus("active");
+      // Send first outbound
+      const out = await sandboxApi.sendOutbound(res.session.id);
+      setMessages([out.message]);
+      setLead(out.lead);
+      setEvents(out.events || []);
+      setAgentActions(["sms-agent: Sent initial outreach"]);
+    } catch (err) {
+      console.error(err);
+    }
+    setLoading(false);
+  };
+
+  const startCustom = async () => {
+    setLoading(true);
+    setMessages([]);
+    setAgentActions([]);
+    setEvents([]);
+    try {
+      const res = await sandboxApi.createSession();
+      setSession(res.session);
+      setLead(res.session.lead);
+      setSessionStatus("active");
+      const out = await sandboxApi.sendOutbound(res.session.id);
+      setMessages([out.message]);
+      setLead(out.lead);
+      setEvents(out.events || []);
+      setAgentActions(["sms-agent: Sent initial outreach"]);
+    } catch (err) {
+      console.error(err);
+    }
+    setLoading(false);
+  };
+
+  const sendReply = async () => {
+    if (!replyText.trim() || !session || loading) return;
+    setLoading(true);
+    const text = replyText;
+    setReplyText("");
+    try {
+      const res = await sandboxApi.sendReply(session.id, text);
+      const newMsgs = [...messages];
+      // Add inbound message
+      newMsgs.push({ direction: "inbound", content: text, timestamp: new Date(), channel: "sms" });
+      // Add AI response if present
+      if (res.aiResponse) {
+        newMsgs.push(res.aiResponse);
+      }
+      setMessages(newMsgs);
+      setLead(res.lead);
+      setSessionStatus(res.sessionStatus);
+      setAgentActions(res.agentActions || []);
+      setEvents(prev => [...prev, ...(res.events || [])]);
+
+      // Appointment booked — trigger celebration
+      if (res.appointment) {
+        setAppointment(res.appointment);
+        setTimeout(() => setShowCelebration(true), 800);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+    setLoading(false);
+  };
+
+  const goToAppointments = () => {
+    // Store the appointment ID so the Appointments tab can highlight it
+    if (appointment?.id) {
+      sessionStorage.setItem("highlight_appointment", String(appointment.id));
+    }
+    setPage("Appointments");
+  };
+
+  const reset = () => {
+    setSession(null);
+    setMessages([]);
+    setAgentActions([]);
+    setEvents([]);
+    setLead(null);
+    setSessionStatus("active");
+    setReplyText("");
+    setAppointment(null);
+    setShowCelebration(false);
+  };
+
+  // No active session — show scenario picker
+  if (!session) {
+    return (
+      <div>
+        <div style={{ marginBottom: 24 }}>
+          <h2 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>AI Sandbox</h2>
+          <p style={{ color: COLORS.textMuted, fontSize: 13, margin: "4px 0 0" }}>See the Reactor in action — pick a scenario or start a free conversation.</p>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16, marginBottom: 24 }}>
+          {scenarios.map(s => (
+            <div key={s.id} onClick={() => startScenario(s.id)} style={{
+              ...S.card, cursor: "pointer", transition: "border-color 0.2s, transform 0.15s",
+              border: `1px solid ${COLORS.border}`,
+            }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = COLORS.orange; e.currentTarget.style.transform = "translateY(-2px)"; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = COLORS.border; e.currentTarget.style.transform = "translateY(0)"; }}
+            >
+              <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>{s.name}</div>
+              <div style={{ fontSize: 12, color: COLORS.textMuted, lineHeight: 1.5, marginBottom: 10 }}>{s.description}</div>
+              <div style={{ fontSize: 11, color: COLORS.orange }}>{s.replyCount} conversation turn{s.replyCount !== 1 ? "s" : ""}</div>
+            </div>
+          ))}
+
+          <div onClick={startCustom} style={{
+            ...S.card, cursor: "pointer", transition: "border-color 0.2s, transform 0.15s",
+            border: `1px dashed ${COLORS.border}`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: 120,
+          }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = COLORS.orange; e.currentTarget.style.transform = "translateY(-2px)"; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = COLORS.border; e.currentTarget.style.transform = "translateY(0)"; }}
+          >
+            <div style={{ fontSize: 28, marginBottom: 8 }}>+</div>
+            <div style={{ fontSize: 14, fontWeight: 600 }}>Free Conversation</div>
+            <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 4 }}>Type anything and see how the AI responds</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Active session — show chat + agent panel
+  const statusColors = { active: COLORS.green, appointment_proposed: COLORS.orange, appointment_set: COLORS.blue, opted_out: COLORS.red, completed: COLORS.teal, objection_loop: COLORS.yellow };
+  const statusLabels = { active: "Active", appointment_proposed: "Time Proposed", appointment_set: "Appointment Set", opted_out: "Opted Out", completed: "Completed", objection_loop: "Handling Objection" };
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+        <div>
+          <h2 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>AI Sandbox</h2>
+          <p style={{ color: COLORS.textMuted, fontSize: 13, margin: "4px 0 0" }}>
+            Chatting with {lead?.firstName} {lead?.lastName} — {lead?.industry} lead
+          </p>
+        </div>
+        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          <span style={{ fontSize: 11, padding: "4px 10px", borderRadius: 6, background: `${statusColors[sessionStatus] || COLORS.green}22`, color: statusColors[sessionStatus] || COLORS.green, fontWeight: 600 }}>
+            {statusLabels[sessionStatus] || sessionStatus}
+          </span>
+          <button onClick={reset} style={{ background: COLORS.surface, color: COLORS.textMuted, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: "8px 16px", fontSize: 12, cursor: "pointer" }}>
+            New Session
+          </button>
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 20 }}>
+        {/* Chat panel */}
+        <div style={{ ...S.card, display: "flex", flexDirection: "column", height: "calc(100vh - 200px)", minHeight: 500 }}>
+          {/* Messages */}
+          <div style={{ flex: 1, overflowY: "auto", padding: "12px 0" }}>
+            {messages.map((m, i) => (
+              <div key={i} style={{ display: "flex", justifyContent: m.direction === "outbound" ? "flex-start" : "flex-end", marginBottom: 12, padding: "0 4px" }}>
+                <div style={{
+                  maxWidth: "75%", padding: "10px 14px", borderRadius: 14,
+                  background: m.direction === "outbound" ? `${COLORS.orange}18` : COLORS.surfaceAlt,
+                  border: `1px solid ${m.direction === "outbound" ? COLORS.orange + "33" : COLORS.border}`,
+                }}>
+                  <div style={{ fontSize: 10, color: COLORS.textDim, marginBottom: 4, fontWeight: 600 }}>
+                    {m.direction === "outbound" ? "Aria (AI)" : `${lead?.firstName}`}
+                  </div>
+                  <div style={{ fontSize: 13, lineHeight: 1.5, color: COLORS.text }}>{m.content}</div>
+                  {m.metadata?.intent && (
+                    <div style={{ fontSize: 10, color: COLORS.textDim, marginTop: 6 }}>
+                      Detected: {m.metadata.sentiment} / {m.metadata.intent}
+                      {m.metadata.objectionCategory && ` (${m.metadata.objectionCategory})`}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+            {loading && (
+              <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: 12, padding: "0 4px" }}>
+                <div style={{ padding: "10px 14px", borderRadius: 14, background: `${COLORS.orange}18`, border: `1px solid ${COLORS.orange}33` }}>
+                  <div style={{ fontSize: 13, color: COLORS.textMuted }}>Aria is typing...</div>
+                </div>
+              </div>
+            )}
+            <div ref={chatEndRef} />
+          </div>
+
+          {/* Input */}
+          {(sessionStatus === "active" || sessionStatus === "appointment_proposed") ? (
+            <div style={{ borderTop: `1px solid ${COLORS.border}`, padding: "12px 0 0", display: "flex", gap: 10 }}>
+              <input
+                value={replyText}
+                onChange={e => setReplyText(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && sendReply()}
+                placeholder={sessionStatus === "appointment_proposed" ? "Confirm or reschedule the time..." : "Type a reply as the lead..."}
+                style={{
+                  flex: 1, background: COLORS.surfaceAlt, border: `1px solid ${COLORS.border}`, borderRadius: 10,
+                  padding: "10px 14px", color: COLORS.text, fontSize: 13, outline: "none",
+                }}
+              />
+              <button onClick={sendReply} disabled={loading || !replyText.trim()} style={{
+                background: `linear-gradient(135deg, ${COLORS.orange}, ${COLORS.orangeDark})`,
+                color: "#fff", border: "none", borderRadius: 10, padding: "10px 20px",
+                fontSize: 13, fontWeight: 600, cursor: "pointer", opacity: loading || !replyText.trim() ? 0.5 : 1,
+              }}>
+                Send
+              </button>
+            </div>
+          ) : (
+            <div style={{ borderTop: `1px solid ${COLORS.border}`, padding: "14px 0 0", textAlign: "center" }}>
+              {sessionStatus === "appointment_set" && showCelebration && appointment ? (
+                <div style={{
+                  background: `linear-gradient(135deg, ${COLORS.green}18, ${COLORS.teal}18)`,
+                  border: `1px solid ${COLORS.green}44`,
+                  borderRadius: 14, padding: 20, textAlign: "center",
+                  animation: "slideUp 0.5s ease-out",
+                }}>
+                  <div style={{ fontSize: 36, marginBottom: 8 }}>🎉</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: COLORS.green, marginBottom: 4 }}>Appointment Confirmed!</div>
+                  <div style={{ fontSize: 13, color: COLORS.text, marginBottom: 2 }}>{appointment.leadName}</div>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.orange, marginBottom: 4 }}>
+                    {new Date(appointment.scheduledAt).toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })} at {new Date(appointment.scheduledAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                  </div>
+                  <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 14 }}>{appointment.industry} consultation</div>
+                  <button onClick={goToAppointments} style={{
+                    background: `linear-gradient(135deg, ${COLORS.green}, ${COLORS.teal})`,
+                    color: "#fff", border: "none", borderRadius: 10, padding: "10px 24px",
+                    fontSize: 13, fontWeight: 600, cursor: "pointer",
+                    boxShadow: `0 4px 16px ${COLORS.green}33`,
+                  }}>
+                    View in Appointments
+                  </button>
+                </div>
+              ) : (
+                <div style={{ fontSize: 13, color: COLORS.textMuted }}>
+                  {sessionStatus === "opted_out" ? "Lead opted out — conversation ended" :
+                   sessionStatus === "appointment_set" ? "Booking appointment..." :
+                   sessionStatus === "appointment_proposed" ? "Waiting for lead to confirm time..." : "Session ended"}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Agent Intelligence Panel */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          {/* Lead card */}
+          {lead && (
+            <div style={S.card}>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10 }}>Lead Profile</div>
+              <div style={{ fontSize: 12, color: COLORS.textMuted, lineHeight: 1.8 }}>
+                <div><strong style={{ color: COLORS.text }}>Name:</strong> {lead.firstName} {lead.lastName}</div>
+                <div><strong style={{ color: COLORS.text }}>Industry:</strong> {lead.industry}</div>
+                <div><strong style={{ color: COLORS.text }}>Score:</strong> <span style={{ color: lead.score >= 70 ? COLORS.green : lead.score >= 40 ? COLORS.yellow : COLORS.red, fontWeight: 600 }}>{lead.score}/100</span></div>
+                <div><strong style={{ color: COLORS.text }}>Temp:</strong> <span style={{ color: lead.temperature === "hot" ? COLORS.red : lead.temperature === "warm" ? COLORS.yellow : COLORS.blue }}>{lead.temperature}</span></div>
+                <div><strong style={{ color: COLORS.text }}>State:</strong> {lead.reactorState}</div>
+                <div><strong style={{ color: COLORS.text }}>Attempts:</strong> {lead.outreachAttempts}</div>
+              </div>
+            </div>
+          )}
+
+          {/* Agent actions */}
+          <div style={{ ...S.card, flex: 1, overflow: "auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>Agent Activity</div>
+              <button onClick={() => setShowEvents(!showEvents)} style={{ background: "none", border: "none", color: COLORS.orange, fontSize: 11, cursor: "pointer" }}>
+                {showEvents ? "Actions" : "Events"}
+              </button>
+            </div>
+            {!showEvents ? (
+              agentActions.map((a, i) => (
+                <div key={i} style={{ fontSize: 11, color: COLORS.textMuted, padding: "6px 0", borderBottom: `1px solid ${COLORS.border}22`, lineHeight: 1.5 }}>
+                  <span style={{ color: COLORS.orange, fontWeight: 600 }}>{a.split(":")[0]}:</span>
+                  <span>{a.split(":").slice(1).join(":")}</span>
+                </div>
+              ))
+            ) : (
+              events.map((e, i) => (
+                <div key={i} style={{ fontSize: 11, color: COLORS.textMuted, padding: "6px 0", borderBottom: `1px solid ${COLORS.border}22`, lineHeight: 1.5 }}>
+                  <div style={{ color: COLORS.teal, fontWeight: 600 }}>{e.type}</div>
+                  <div>{e.description}</div>
+                </div>
+              ))
+            )}
+            {agentActions.length === 0 && !showEvents && (
+              <div style={{ fontSize: 12, color: COLORS.textDim, textAlign: "center", padding: 20 }}>No activity yet</div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
 // MAIN APP
 // ============================================================
 export default function CatalystApp() {
@@ -1695,6 +2052,7 @@ export default function CatalystApp() {
     { name: "Leads", icon: "👥" },
     { name: "Appointments", icon: "📅" },
     { name: "Conversation Replay", icon: "💬" },
+    { name: "Sandbox", icon: "⚡", badge: "DEMO" },
     { name: "Proposals & Sales", icon: "📝", badge: "PRO" },
     { section: "Configuration" },
     { name: "Voice AI", icon: "🎙️" },
@@ -1711,6 +2069,7 @@ export default function CatalystApp() {
       case "Campaigns": return <CampaignsPage />;
       case "Appointments": return <AppointmentsPage />;
       case "Conversation Replay": return <ConversationReplayPage />;
+      case "Sandbox": return <SandboxPage setPage={setPage} />;
       case "Proposals & Sales": return <ProposalsPage />;
       case "Voice AI": return <VoiceAIPage />;
       case "Connect Your Tech": return <ConnectTechPage />;
@@ -1723,6 +2082,17 @@ export default function CatalystApp() {
   return (
     <div style={S.app}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+      <style>{`
+        @keyframes slideUp {
+          from { opacity: 0; transform: translateY(20px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes highlightPulse {
+          0% { background-color: rgba(39, 174, 96, 0.25); }
+          50% { background-color: rgba(39, 174, 96, 0.08); }
+          100% { background-color: transparent; }
+        }
+      `}</style>
       <div style={S.sidebar}>
         <div style={{ padding: "20px 20px 16px", borderBottom: `1px solid ${COLORS.border}` }}>
           <Logo /><div style={{ fontSize: 10, color: COLORS.textDim, marginTop: 6, letterSpacing: 0.5 }}>THE REACTION STACK</div>

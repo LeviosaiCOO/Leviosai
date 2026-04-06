@@ -33,6 +33,17 @@ export type InsertUser = z.infer<typeof insertUserSchema>;
 export const organizations = pgTable("organizations", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
+  stripeCustomerId: text("stripe_customer_id"),
+  stripeSubscriptionId: text("stripe_subscription_id"),
+  stripePriceId: text("stripe_price_id"),
+  plan: text("plan").notNull().default("free"),
+  industry: text("industry"),
+  product: text("product").default("reviiv"),
+  monthlyBudgetCents: integer("monthly_budget_cents"),
+  dailyBudgetCents: integer("daily_budget_cents"),
+  costPerAppointmentCents: integer("cost_per_appointment_cents"),
+  reactorEnabled: boolean("reactor_enabled").default(false),
+  reactorConfig: text("reactor_config"),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 
@@ -63,6 +74,14 @@ export const leads = pgTable("leads", {
   aiScore: integer("ai_score"),
   aiTemperature: text("ai_temperature"),
   aiObjection: text("ai_objection"),
+  reactorState: text("reactor_state").default("new"),
+  consentStatus: text("consent_status"),
+  dncClean: boolean("dnc_clean"),
+  sentimentScore: integer("sentiment_score"),
+  outreachAttempts: integer("outreach_attempts").default(0),
+  nextOutreachAt: timestamp("next_outreach_at"),
+  lastAgentId: text("last_agent_id"),
+  customFields: text("custom_fields"),
   lastContactedAt: timestamp("last_contacted_at"),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
@@ -127,6 +146,7 @@ export const appointmentsRelations = relations(appointments, ({ one }) => ({
 
 export const campaigns = pgTable("campaigns", {
   id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id),
   name: text("name").notNull(),
   description: text("description"),
   status: text("status").notNull().default("draft"),
@@ -162,10 +182,62 @@ export const proposalsRelations = relations(proposals, ({ one }) => ({
 
 export const activityLogs = pgTable("activity_logs", {
   id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id),
   entityType: text("entity_type").notNull(),
   entityId: integer("entity_id").notNull(),
   action: text("action").notNull(),
   details: text("details"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+// ─── REACTOR: LEAD STATE LOG ────────────────────────────────────────────────
+
+export const leadStateLog = pgTable("lead_state_log", {
+  id: serial("id").primaryKey(),
+  leadId: integer("lead_id").notNull().references(() => leads.id, { onDelete: "cascade" }),
+  organizationId: integer("organization_id").references(() => organizations.id),
+  fromState: text("from_state").notNull(),
+  toState: text("to_state").notNull(),
+  reason: text("reason"),
+  agentId: text("agent_id"),
+  eventId: text("event_id"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+// ─── REACTOR: BUDGET LEDGER ─────────────────────────────────────────────────
+
+export const budgetLedger = pgTable("budget_ledger", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").notNull().references(() => organizations.id),
+  agentId: text("agent_id").notNull(),
+  eventId: text("event_id"),
+  actionType: text("action_type").notNull(),
+  costCents: integer("cost_cents").notNull(),
+  dailyDate: text("daily_date").notNull(),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+// ─── REACTOR: EVENT LOG ─────────────────────────────────────────────────────
+
+export const reactorEventLog = pgTable("reactor_event_log", {
+  id: serial("id").primaryKey(),
+  eventId: text("event_id").notNull(),
+  eventType: text("event_type").notNull(),
+  organizationId: integer("organization_id"),
+  leadId: integer("lead_id"),
+  payload: text("payload"),
+  agentResults: text("agent_results"),
+  status: text("status").notNull().default("processed"),
+  processingMs: integer("processing_ms"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+// ─── REACTOR: INDUSTRY PRICING ──────────────────────────────────────────────
+
+export const industryPricing = pgTable("industry_pricing", {
+  id: serial("id").primaryKey(),
+  industry: text("industry").notNull().unique(),
+  reviivCentsPerAppt: integer("reviiv_cents_per_appt").notNull(),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 
@@ -199,6 +271,22 @@ export const insertActivityLogSchema = createInsertSchema(activityLogs).omit({
   id: true,
   createdAt: true,
 });
+export const insertLeadStateLogSchema = createInsertSchema(leadStateLog).omit({
+  id: true,
+  createdAt: true,
+});
+export const insertBudgetLedgerSchema = createInsertSchema(budgetLedger).omit({
+  id: true,
+  createdAt: true,
+});
+export const insertReactorEventLogSchema = createInsertSchema(reactorEventLog).omit({
+  id: true,
+  createdAt: true,
+});
+export const insertIndustryPricingSchema = createInsertSchema(industryPricing).omit({
+  id: true,
+  createdAt: true,
+});
 
 // ─── TYPES ──────────────────────────────────────────────────────────────────
 
@@ -216,3 +304,11 @@ export type Proposal = typeof proposals.$inferSelect;
 export type InsertProposal = z.infer<typeof insertProposalSchema>;
 export type ActivityLog = typeof activityLogs.$inferSelect;
 export type InsertActivityLog = z.infer<typeof insertActivityLogSchema>;
+export type LeadStateLogEntry = typeof leadStateLog.$inferSelect;
+export type InsertLeadStateLog = z.infer<typeof insertLeadStateLogSchema>;
+export type BudgetLedgerEntry = typeof budgetLedger.$inferSelect;
+export type InsertBudgetLedger = z.infer<typeof insertBudgetLedgerSchema>;
+export type ReactorEventLogEntry = typeof reactorEventLog.$inferSelect;
+export type InsertReactorEventLog = z.infer<typeof insertReactorEventLogSchema>;
+export type IndustryPricingEntry = typeof industryPricing.$inferSelect;
+export type InsertIndustryPricing = z.infer<typeof insertIndustryPricingSchema>;

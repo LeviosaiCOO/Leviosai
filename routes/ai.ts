@@ -1,13 +1,14 @@
 import { Router, Request, Response } from "express";
 import { scoreLead, generateMessage, handleObjection, isAIConfigured } from "../lib/ai.js";
 import { storage } from "../lib/storage.js";
+import { requireAuth } from "./auth.js";
 
 const router = Router();
 
 // Score a lead with AI
-router.post("/api/leads/:id/score", async (req: Request, res: Response) => {
+router.post("/api/leads/:id/score", requireAuth, async (req: Request, res: Response) => {
   try {
-    const lead = await storage.getLead(parseInt(req.params.id));
+    const lead = await storage.getLead(parseInt(req.params.id), req.organizationId);
     if (!lead) return res.status(404).json({ error: "Lead not found" });
 
     const result = await scoreLead({
@@ -21,18 +22,19 @@ router.post("/api/leads/:id/score", async (req: Request, res: Response) => {
       notes: req.body.notes,
     });
 
-    // Update lead with AI score
+    // Update lead with AI score (org-scoped)
     await storage.updateLead(parseInt(req.params.id), {
       aiScore: result.score,
       aiTemperature: result.temperature,
       aiObjection: result.objection,
-    });
+    }, req.organizationId);
 
     await storage.logActivity({
       entityType: "lead",
       entityId: parseInt(req.params.id),
       action: "ai_scored",
       details: `AI Score: ${result.score}, Temp: ${result.temperature}. ${result.reasoning}`,
+      organizationId: req.organizationId,
     });
 
     res.json({ ...result, aiConfigured: isAIConfigured() });
@@ -42,9 +44,9 @@ router.post("/api/leads/:id/score", async (req: Request, res: Response) => {
 });
 
 // Generate AI message for a lead
-router.post("/api/leads/:id/generate-message", async (req: Request, res: Response) => {
+router.post("/api/leads/:id/generate-message", requireAuth, async (req: Request, res: Response) => {
   try {
-    const lead = await storage.getLead(parseInt(req.params.id));
+    const lead = await storage.getLead(parseInt(req.params.id), req.organizationId);
     if (!lead) return res.status(404).json({ error: "Lead not found" });
 
     const { channel, context } = req.body;
@@ -65,7 +67,7 @@ router.post("/api/leads/:id/generate-message", async (req: Request, res: Respons
 });
 
 // Handle objection with AI
-router.post("/api/ai/objection", async (req: Request, res: Response) => {
+router.post("/api/ai/objection", requireAuth, async (req: Request, res: Response) => {
   try {
     const { objection, leadContext } = req.body;
     if (!objection) return res.status(400).json({ error: "Objection text required" });
@@ -77,10 +79,10 @@ router.post("/api/ai/objection", async (req: Request, res: Response) => {
   }
 });
 
-// Score all unscored leads
-router.post("/api/leads/score-all", async (req: Request, res: Response) => {
+// Score all unscored leads (org-scoped)
+router.post("/api/leads/score-all", requireAuth, async (req: Request, res: Response) => {
   try {
-    const leads = await storage.getLeads();
+    const leads = await storage.getLeads({ organizationId: req.organizationId });
     const unscored = leads.filter((l: any) => !l.aiScore || l.aiScore === 0);
     const results = [];
 
@@ -99,7 +101,7 @@ router.post("/api/leads/score-all", async (req: Request, res: Response) => {
         aiScore: result.score,
         aiTemperature: result.temperature,
         aiObjection: result.objection,
-      });
+      }, req.organizationId);
 
       results.push({ leadId: lead.id, name: `${lead.firstName} ${lead.lastName}`, ...result });
     }
@@ -110,7 +112,7 @@ router.post("/api/leads/score-all", async (req: Request, res: Response) => {
   }
 });
 
-// AI status
+// AI status (no auth needed — informational)
 router.get("/api/ai/status", async (_req: Request, res: Response) => {
   res.json({ configured: isAIConfigured() });
 });

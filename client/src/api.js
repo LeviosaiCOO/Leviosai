@@ -143,6 +143,22 @@ export const aiApi = {
   status: () => request("/api/ai/status"),
 };
 
+// Sandbox (demo conversations)
+export const sandboxApi = {
+  scenarios: () => request("/api/sandbox/scenarios"),
+  createSession: (scenarioId, lead) =>
+    request("/api/sandbox/sessions", { method: "POST", body: JSON.stringify({ scenarioId, lead }) }),
+  getSession: (id) => request(`/api/sandbox/sessions/${id}`),
+  listSessions: () => request("/api/sandbox/sessions"),
+  sendOutbound: (id) =>
+    request(`/api/sandbox/sessions/${id}/outbound`, { method: "POST", body: JSON.stringify({}) }),
+  sendReply: (id, text) =>
+    request(`/api/sandbox/sessions/${id}/reply`, { method: "POST", body: JSON.stringify({ text }) }),
+  runDemo: (scenarioId) =>
+    request(`/api/sandbox/demo/${scenarioId}`, { method: "POST", body: JSON.stringify({}) }),
+  getConversation: (id) => request(`/api/sandbox/sessions/${id}/conversation`),
+};
+
 // Health
 export const health = {
   check: () => request("/api/health"),

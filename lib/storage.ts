@@ -38,9 +38,9 @@ export const storage = {
     return org;
   },
 
-  // ─── LEADS ──────────────────────────────────────────────────────────────
+  // ─── LEADS (org-scoped) ────────────────────────────────────────────────
 
-  async getLeads(filters?: { status?: string; temperature?: string; search?: string }) {
+  async getLeads(filters?: { status?: string; temperature?: string; search?: string; organizationId?: number | null }) {
     let query = db
       .select({
         id: leads.id,
@@ -65,6 +65,12 @@ export const storage = {
 
     // Apply filters
     const conditions = [];
+
+    // Org scoping
+    if (filters?.organizationId) {
+      conditions.push(eq(leads.organizationId, filters.organizationId));
+    }
+
     if (filters?.status) conditions.push(eq(leads.status, filters.status));
     if (filters?.temperature)
       conditions.push(eq(leads.aiTemperature, filters.temperature));
@@ -85,7 +91,10 @@ export const storage = {
     return query;
   },
 
-  async getLead(id: number) {
+  async getLead(id: number, organizationId?: number | null) {
+    const conditions = [eq(leads.id, id)];
+    if (organizationId) conditions.push(eq(leads.organizationId, organizationId));
+
     const [lead] = await db
       .select({
         id: leads.id,
@@ -105,7 +114,7 @@ export const storage = {
       })
       .from(leads)
       .leftJoin(organizations, eq(leads.organizationId, organizations.id))
-      .where(eq(leads.id, id));
+      .where(and(...conditions));
     return lead || null;
   },
 
@@ -130,39 +139,58 @@ export const storage = {
     return lead;
   },
 
-  async updateLead(id: number, data: Partial<InsertLead>) {
+  async updateLead(id: number, data: Partial<InsertLead>, organizationId?: number | null) {
+    const conditions = [eq(leads.id, id)];
+    if (organizationId) conditions.push(eq(leads.organizationId, organizationId));
+
     const [lead] = await db
       .update(leads)
       .set(data)
-      .where(eq(leads.id, id))
+      .where(and(...conditions))
       .returning();
     return lead;
   },
 
-  async deleteLead(id: number) {
-    await db.delete(leads).where(eq(leads.id, id));
+  async deleteLead(id: number, organizationId?: number | null) {
+    const conditions = [eq(leads.id, id)];
+    if (organizationId) conditions.push(eq(leads.organizationId, organizationId));
+
+    await db.delete(leads).where(and(...conditions));
   },
 
-  // Pipeline stats
-  async getPipelineStats() {
-    const result = await db
+  // Pipeline stats (org-scoped)
+  async getPipelineStats(organizationId?: number | null) {
+    let query = db
       .select({
         status: leads.status,
         count: sql<number>`count(*)::int`,
       })
       .from(leads)
-      .groupBy(leads.status);
-    return result;
+      .groupBy(leads.status)
+      .$dynamic();
+
+    if (organizationId) {
+      query = query.where(eq(leads.organizationId, organizationId));
+    }
+
+    return query;
   },
 
-  async getLeadsByTemperature() {
-    return db
+  async getLeadsByTemperature(organizationId?: number | null) {
+    let query = db
       .select({
         temperature: leads.aiTemperature,
         count: sql<number>`count(*)::int`,
       })
       .from(leads)
-      .groupBy(leads.aiTemperature);
+      .groupBy(leads.aiTemperature)
+      .$dynamic();
+
+    if (organizationId) {
+      query = query.where(eq(leads.organizationId, organizationId));
+    }
+
+    return query;
   },
 
   // ─── LEAD MESSAGES ────────────────────────────────────────────────────
@@ -185,8 +213,8 @@ export const storage = {
     return msg;
   },
 
-  async getRecentMessages(limit = 20) {
-    return db
+  async getRecentMessages(limit = 20, organizationId?: number | null) {
+    let query = db
       .select({
         id: leadMessages.id,
         leadId: leadMessages.leadId,
@@ -202,12 +230,19 @@ export const storage = {
       .from(leadMessages)
       .leftJoin(leads, eq(leadMessages.leadId, leads.id))
       .orderBy(desc(leadMessages.createdAt))
-      .limit(limit);
+      .limit(limit)
+      .$dynamic();
+
+    if (organizationId) {
+      query = query.where(eq(leads.organizationId, organizationId));
+    }
+
+    return query;
   },
 
-  // ─── APPOINTMENTS ─────────────────────────────────────────────────────
+  // ─── APPOINTMENTS (scoped through leads) ──────────────────────────────
 
-  async getAppointments(filters?: { status?: string; leadId?: number }) {
+  async getAppointments(filters?: { status?: string; leadId?: number; organizationId?: number | null }) {
     let query = db
       .select({
         id: appointments.id,
@@ -229,6 +264,7 @@ export const storage = {
       .$dynamic();
 
     const conditions = [];
+    if (filters?.organizationId) conditions.push(eq(leads.organizationId, filters.organizationId));
     if (filters?.status) conditions.push(eq(appointments.status, filters.status));
     if (filters?.leadId) conditions.push(eq(appointments.leadId, filters.leadId));
     if (conditions.length > 0) query = query.where(and(...conditions));
@@ -250,17 +286,24 @@ export const storage = {
     return appt;
   },
 
-  // ─── CAMPAIGNS ────────────────────────────────────────────────────────
+  // ─── CAMPAIGNS (org-scoped) ───────────────────────────────────────────
 
-  async getCampaigns() {
-    return db.select().from(campaigns).orderBy(desc(campaigns.createdAt));
+  async getCampaigns(organizationId?: number | null) {
+    let query = db.select().from(campaigns).orderBy(desc(campaigns.createdAt)).$dynamic();
+    if (organizationId) {
+      query = query.where(eq(campaigns.organizationId, organizationId));
+    }
+    return query;
   },
 
-  async getCampaign(id: number) {
+  async getCampaign(id: number, organizationId?: number | null) {
+    const conditions = [eq(campaigns.id, id)];
+    if (organizationId) conditions.push(eq(campaigns.organizationId, organizationId));
+
     const [campaign] = await db
       .select()
       .from(campaigns)
-      .where(eq(campaigns.id, id));
+      .where(and(...conditions));
     return campaign || null;
   },
 
@@ -269,18 +312,21 @@ export const storage = {
     return campaign;
   },
 
-  async updateCampaign(id: number, data: Partial<InsertCampaign>) {
+  async updateCampaign(id: number, data: Partial<InsertCampaign>, organizationId?: number | null) {
+    const conditions = [eq(campaigns.id, id)];
+    if (organizationId) conditions.push(eq(campaigns.organizationId, organizationId));
+
     const [campaign] = await db
       .update(campaigns)
       .set(data)
-      .where(eq(campaigns.id, id))
+      .where(and(...conditions))
       .returning();
     return campaign;
   },
 
-  // ─── PROPOSALS ────────────────────────────────────────────────────────
+  // ─── PROPOSALS (scoped through leads) ─────────────────────────────────
 
-  async getProposals(leadId?: number) {
+  async getProposals(leadId?: number, organizationId?: number | null) {
     let query = db
       .select({
         id: proposals.id,
@@ -299,7 +345,11 @@ export const storage = {
       .orderBy(desc(proposals.createdAt))
       .$dynamic();
 
-    if (leadId) query = query.where(eq(proposals.leadId, leadId));
+    const conditions = [];
+    if (organizationId) conditions.push(eq(leads.organizationId, organizationId));
+    if (leadId) conditions.push(eq(proposals.leadId, leadId));
+    if (conditions.length > 0) query = query.where(and(...conditions));
+
     return query;
   },
 
@@ -317,9 +367,9 @@ export const storage = {
     return proposal;
   },
 
-  // ─── ACTIVITY LOGS ────────────────────────────────────────────────────
+  // ─── ACTIVITY LOGS (org-scoped) ───────────────────────────────────────
 
-  async getActivityLogs(entityType?: string, entityId?: number, limit = 50) {
+  async getActivityLogs(entityType?: string, entityId?: number, limit = 50, organizationId?: number | null) {
     let query = db
       .select()
       .from(activityLogs)
@@ -328,6 +378,7 @@ export const storage = {
       .$dynamic();
 
     const conditions = [];
+    if (organizationId) conditions.push(eq(activityLogs.organizationId, organizationId));
     if (entityType) conditions.push(eq(activityLogs.entityType, entityType));
     if (entityId) conditions.push(eq(activityLogs.entityId, entityId));
     if (conditions.length > 0) query = query.where(and(...conditions));
@@ -340,40 +391,65 @@ export const storage = {
     return log;
   },
 
-  // ─── DASHBOARD STATS ─────────────────────────────────────────────────
+  // ─── DASHBOARD STATS (org-scoped) ─────────────────────────────────────
 
-  async getDashboardStats() {
+  async getDashboardStats(organizationId?: number | null) {
+    const orgFilter = organizationId ? eq(leads.organizationId, organizationId) : undefined;
+    const orgFilterProposals = organizationId
+      ? and(
+          eq(leads.organizationId, organizationId),
+          or(
+            eq(proposals.status, "sent"),
+            eq(proposals.status, "viewed"),
+            eq(proposals.status, "draft")
+          )
+        )
+      : or(
+          eq(proposals.status, "sent"),
+          eq(proposals.status, "viewed"),
+          eq(proposals.status, "draft")
+        );
+
     const [leadCount] = await db
       .select({ count: sql<number>`count(*)::int` })
-      .from(leads);
+      .from(leads)
+      .where(orgFilter);
 
     const [hotCount] = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(leads)
-      .where(eq(leads.aiTemperature, "hot"));
+      .where(orgFilter ? and(orgFilter, eq(leads.aiTemperature, "hot")) : eq(leads.aiTemperature, "hot"));
 
     const [wonCount] = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(leads)
-      .where(eq(leads.status, "won"));
+      .where(orgFilter ? and(orgFilter, eq(leads.status, "won")) : eq(leads.status, "won"));
 
-    const [proposalTotal] = await db
-      .select({ total: sql<number>`coalesce(sum(amount), 0)::int` })
+    const proposalQuery = db
+      .select({ total: sql<number>`coalesce(sum(${proposals.amount}), 0)::int` })
       .from(proposals)
-      .where(
-        or(
-          eq(proposals.status, "sent"),
-          eq(proposals.status, "viewed"),
-          eq(proposals.status, "draft")
-        )
-      );
+      .leftJoin(leads, eq(proposals.leadId, leads.id));
 
-    const [wonTotal] = await db
-      .select({ total: sql<number>`coalesce(sum(amount), 0)::int` })
+    const [proposalTotal] = organizationId
+      ? await proposalQuery.where(orgFilterProposals)
+      : await proposalQuery.where(
+          or(
+            eq(proposals.status, "sent"),
+            eq(proposals.status, "viewed"),
+            eq(proposals.status, "draft")
+          )
+        );
+
+    const wonProposalQuery = db
+      .select({ total: sql<number>`coalesce(sum(${proposals.amount}), 0)::int` })
       .from(proposals)
-      .where(eq(proposals.status, "accepted"));
+      .leftJoin(leads, eq(proposals.leadId, leads.id));
 
-    const pipeline = await db
+    const [wonTotal] = organizationId
+      ? await wonProposalQuery.where(and(eq(leads.organizationId, organizationId), eq(proposals.status, "accepted")))
+      : await wonProposalQuery.where(eq(proposals.status, "accepted"));
+
+    const pipelineQuery = db
       .select({
         status: leads.status,
         count: sql<number>`count(*)::int`,
@@ -381,7 +457,11 @@ export const storage = {
       .from(leads)
       .groupBy(leads.status);
 
-    const upcomingAppointments = await db
+    const pipeline = orgFilter
+      ? await pipelineQuery.where(orgFilter)
+      : await pipelineQuery;
+
+    let apptQuery = db
       .select({
         id: appointments.id,
         title: appointments.title,
@@ -391,14 +471,16 @@ export const storage = {
       })
       .from(appointments)
       .leftJoin(leads, eq(appointments.leadId, leads.id))
-      .where(
-        and(
-          eq(appointments.status, "scheduled"),
-          sql`${appointments.scheduledAt} >= NOW()`
-        )
-      )
       .orderBy(asc(appointments.scheduledAt))
-      .limit(5);
+      .limit(5)
+      .$dynamic();
+
+    const apptConditions = [
+      eq(appointments.status, "scheduled"),
+      sql`${appointments.scheduledAt} >= NOW()`,
+    ];
+    if (organizationId) apptConditions.push(eq(leads.organizationId, organizationId));
+    const upcomingAppointments = await apptQuery.where(and(...apptConditions));
 
     return {
       totalLeads: leadCount.count,
