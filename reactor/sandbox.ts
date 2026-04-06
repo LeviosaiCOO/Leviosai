@@ -277,7 +277,7 @@ export async function processReply(
   let confidence = 0.5;
 
   // Appointment confirmation (lead confirms proposed time)
-  const confirmKeywords = ["works", "perfect", "let's do it", "sounds good", "that works", "yes", "yep", "yeah", "sure", "confirmed", "see you", "i'm in", "count me in", "book it", "lock it in"];
+  const confirmKeywords = ["works", "perfect", "let's do it", "sounds good", "that works", "yes", "yep", "yeah", "sure", "confirmed", "see you", "i'm in", "count me in", "book it", "lock it in", "ok", "okay", "fine", "great", "good", "absolutely", "definitely", "down", "bet", "done", "deal", "awesome", "cool", "for sure", "i can do", "i'll be there", "that time", "2pm"];
   if (session.status === "appointment_proposed" && confirmKeywords.some((k) => lowerReply.includes(k))) {
     sentiment = "positive";
     intent = "appointment_confirmed";
