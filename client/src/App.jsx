@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import _ from "lodash";
 import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from "recharts";
 import { auth, setToken, clearToken, isAuthenticated, dashboard, leadsApi, appointmentsApi, campaignsApi, proposalsApi, activityApi, messagesApi, messagingApi, aiApi, sandboxApi } from "./api.js";
+import { INTEGRATION_CATEGORIES, integrationsService, MOCK_BILLING } from "./services.js";
 
 // ============================================================
 // CATALYST — Agentic AI Sales & Lead Revival Platform
@@ -250,6 +251,36 @@ function Toggle({ value, onChange, label }) {
   );
 }
 
+function LoadingState({ message = "Loading..." }) {
+  return (
+    <div className="loading-state">
+      <div className="loading-spinner" />
+      <div style={{ fontSize: 14, color: COLORS.textMuted }}>{message}</div>
+    </div>
+  );
+}
+
+function EmptyState({ icon = "📭", title, description, action, onAction }) {
+  return (
+    <div className="empty-state">
+      <div className="empty-state-icon">{icon}</div>
+      <div className="empty-state-title">{title}</div>
+      <div className="empty-state-desc">{description}</div>
+      {action && <button style={S.btn("primary")} onClick={onAction}>{action}</button>}
+    </div>
+  );
+}
+
+function ErrorState({ message = "Something went wrong", onRetry }) {
+  return (
+    <div className="error-state">
+      <div className="error-state-icon">⚠️</div>
+      <div className="error-state-msg">{message}</div>
+      {onRetry && <button style={S.btn("secondary")} onClick={onRetry}>Try Again</button>}
+    </div>
+  );
+}
+
 function ComplianceBadge() {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 10px", borderRadius: 6, background: `${COLORS.green}15`, border: `1px solid ${COLORS.green}33` }}>
@@ -434,8 +465,8 @@ function LoginPage({ onLogin }) {
   };
 
   return (
-    <div style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: `radial-gradient(ellipse at 30% 20%, ${COLORS.orangeGlow}, transparent 60%), ${COLORS.bg}` }}>
-      <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 20, padding: "48px 40px", width: 400, textAlign: "center" }}>
+    <div style={{ height: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, background: `radial-gradient(ellipse at 30% 20%, ${COLORS.orangeGlow}, transparent 60%), ${COLORS.bg}` }}>
+      <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 20, padding: "48px 40px", width: "100%", maxWidth: 400, textAlign: "center" }}>
         <Logo />
         <p style={{ color: COLORS.textMuted, fontSize: 13, margin: "12px 0 32px", lineHeight: 1.5 }}>Agentic AI Sales & Lead Revival Platform</p>
         {error && <div style={{ padding: "8px 12px", borderRadius: 8, background: `${COLORS.red}22`, color: COLORS.red, fontSize: 12, marginBottom: 16 }}>{error}</div>}
@@ -462,11 +493,20 @@ function LoginPage({ onLogin }) {
 function DashboardPage({ setPage }) {
   const [stats, setStats] = useState(null);
   const [activity, setActivity] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  useEffect(() => {
-    dashboard.getStats().then(setStats).catch(console.error);
-    activityApi.list({ limit: 7 }).then(setActivity).catch(console.error);
+  const fetchData = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    Promise.all([
+      dashboard.getStats().then(setStats),
+      activityApi.list({ limit: 7 }).then(setActivity),
+    ]).catch((err) => setError(err.message))
+      .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
 
   const totalAppts = stats?.upcomingAppointments?.length || 0;
   const revivalData = [
@@ -492,9 +532,12 @@ function DashboardPage({ setPage }) {
     { time: "3 hrs ago", action: "Lead score boosted +5 (market change)", lead: "David Chen", result: "boost" },
   ];
 
+  if (loading) return <LoadingState message="Loading dashboard..." />;
+  if (error) return <ErrorState message={error} onRetry={fetchData} />;
+
   return (
     <div>
-      <div style={{ marginBottom: 24, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div className="page-header">
         <div>
           <h2 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Dashboard</h2>
           <p style={{ color: COLORS.textMuted, fontSize: 13, margin: "4px 0 0" }}>Welcome back. Here's your performance overview.</p>
@@ -518,7 +561,7 @@ function DashboardPage({ setPage }) {
       {/* FEATURE 5: Performance tier suggestion */}
       <TierSuggestionBanner totalAppts={totalAppts} hasAliv={true} hasSalesTool={false} onAction={(t) => setPage(t === "sales" ? "Proposals & Sales" : "Billing")} />
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16, marginBottom: 24 }}>
+      <div className="grid-stats" style={{ marginBottom: 24 }}>
         <StatCard label="Total Leads" value={stats?.totalLeads || 0} color={COLORS.orange} icon="🔥" />
         <StatCard label="Hot Leads" value={stats?.hotLeads || 0} color={COLORS.green} icon="📅" />
         <StatCard label="Won Deals" value={stats?.wonDeals || 0} color={COLORS.blue} icon="📈" />
@@ -527,7 +570,7 @@ function DashboardPage({ setPage }) {
         <StatCard label="Show-Up Rate" value="87" suffix="%" change={3.2} color={COLORS.purple} icon="✅" />
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 20, marginBottom: 20 }}>
+      <div className="grid-dashboard-charts" style={{ marginBottom: 20 }}>
         <div style={S.card}>
           <div style={S.cardHeader}><span>Revival & Appointment Trends</span><span style={{ fontSize: 11, color: COLORS.textMuted }}>Last 6 months</span></div>
           <ResponsiveContainer width="100%" height={240}>
@@ -561,7 +604,7 @@ function DashboardPage({ setPage }) {
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+      <div className="grid-2col">
         <div style={S.card}>
           <div style={S.cardHeader}><span>Recent Activity</span><span style={{ fontSize: 12, color: COLORS.orange, cursor: "pointer" }} onClick={() => setPage("Conversation Replay")}>View All →</span></div>
           {recentActivity.map((a, i) => (
@@ -623,11 +666,15 @@ function LeadsPage() {
   const [showUpload, setShowUpload] = useState(false);
   const [selectedLead, setSelectedLead] = useState(null);
   const [showReplay, setShowReplay] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   const statusMap = { "New": "new", "Dead": "lost", "Aged": "contacted", "Revived": "qualified", "Appointment Set": "proposal" };
   const statusLabelMap = { "new": "New", "lost": "Dead", "contacted": "Aged", "qualified": "Revived", "proposal": "Appointment Set", "won": "Revived" };
 
   const fetchLeads = useCallback(() => {
+    setLoading(true);
+    setError(null);
     const filters = {};
     if (filter !== "All" && statusMap[filter]) filters.status = statusMap[filter];
     if (search) filters.search = search;
@@ -644,7 +691,8 @@ function LeadsPage() {
         source: l.source || "—",
         lastContact: l.lastContactedAt ? new Date(l.lastContactedAt).toISOString().split("T")[0] : "—",
       })));
-    }).catch(console.error);
+    }).catch((err) => setError(err.message))
+      .finally(() => setLoading(false));
   }, [filter, search]);
 
   useEffect(() => { fetchLeads(); }, [fetchLeads]);
@@ -653,14 +701,17 @@ function LeadsPage() {
   const filters = ["All", "Dead", "Aged", "Revived", "New", "Appointment Set"];
   const filtered = leads.filter(l => (filter === "All" || l.status === filter) && (l.name.toLowerCase().includes(search.toLowerCase()) || l.email.toLowerCase().includes(search.toLowerCase())));
 
+  if (loading && leads.length === 0) return <LoadingState message="Loading leads..." />;
+  if (error && leads.length === 0) return <ErrorState message={error} onRetry={fetchLeads} />;
+
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+      <div className="page-header">
         <div>
           <h2 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Lead Management</h2>
           <p style={{ color: COLORS.textMuted, fontSize: 13, margin: "4px 0 0" }}>{leads.length} total · {leads.filter(l => l.status === "Appointment Set").length} appts set · {leads.filter(l => l.marketBoost > 0).length} market-boosted</p>
         </div>
-        <div style={{ display: "flex", gap: 10 }}>
+        <div className="page-header-actions">
           <button style={S.btn("secondary")} onClick={() => setShowUpload(true)}>📤 Import Leads</button>
           <button style={S.btn("primary")}>+ Add Lead</button>
         </div>
@@ -676,23 +727,27 @@ function LeadsPage() {
         <button style={{ ...S.btn("primary"), padding: "8px 16px", fontSize: 12 }}>Auto-Engage All</button>
       </div>
 
-      <div style={{ display: "flex", gap: 12, marginBottom: 20, alignItems: "center", flexWrap: "wrap" }}>
+      <div className="filter-bar">
         <input style={{ ...S.input, maxWidth: 280 }} placeholder="Search leads..." value={search} onChange={(e) => setSearch(e.target.value)} />
         <TabBar tabs={filters} active={filter} onChange={setFilter} />
       </div>
 
       <div style={S.card}>
+        {filtered.length === 0 && !loading ? (
+          <EmptyState icon="👥" title="No leads found" description={search || filter !== "All" ? "Try adjusting your search or filter criteria." : "Import or add your first lead to get started."} action="+ Add Lead" />
+        ) : (
+        <div className="table-responsive">
         <table style={S.table}>
           <thead><tr>
-            <th style={S.th}>Name</th><th style={S.th}>Contact</th><th style={S.th}>Source</th><th style={S.th}>Status</th>
-            <th style={S.th}>Score</th><th style={S.th}>Decay</th><th style={S.th}>Convos</th><th style={S.th}>Actions</th>
+            <th style={S.th}>Name</th><th style={S.th}>Contact</th><th style={S.th} className="hide-mobile">Source</th><th style={S.th}>Status</th>
+            <th style={S.th}>Score</th><th style={S.th} className="hide-mobile">Decay</th><th style={S.th} className="hide-mobile">Convos</th><th style={S.th}>Actions</th>
           </tr></thead>
           <tbody>
             {filtered.map((l) => (
               <tr key={l.id} style={{ cursor: "pointer" }} onClick={() => setSelectedLead(l)}>
                 <td style={S.td}><span style={{ fontWeight: 600 }}>{l.name}</span></td>
                 <td style={S.td}><div style={{ fontSize: 12 }}>{l.phone}</div><div style={{ fontSize: 11, color: COLORS.textMuted }}>{l.email}</div></td>
-                <td style={S.td}><span style={S.tag(COLORS.textMuted)}>{l.source}</span></td>
+                <td style={S.td} className="hide-mobile"><span style={S.tag(COLORS.textMuted)}>{l.source}</span></td>
                 <td style={S.td}><span style={S.badge(statusColors[l.status] || COLORS.textMuted)}>{l.status}</span></td>
                 <td style={S.td}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -702,7 +757,7 @@ function LeadsPage() {
                   </div>
                 </td>
                 {/* FEATURE 3: Decay indicator */}
-                <td style={S.td}>
+                <td style={S.td} className="hide-mobile">
                   {l.decayRate < 0 ? (
                     <span style={{ fontSize: 12, color: l.decayRate < -2.5 ? COLORS.red : COLORS.yellow, fontWeight: 600 }}>
                       {l.decayRate}/mo {l.decayRate < -2.5 ? "⚠️" : ""}
@@ -710,7 +765,7 @@ function LeadsPage() {
                   ) : <span style={{ fontSize: 12, color: COLORS.green }}>Stable</span>}
                 </td>
                 {/* FEATURE 2: Conversation count */}
-                <td style={S.td}>
+                <td style={S.td} className="hide-mobile">
                   <span style={{ ...S.tag(l.conversations.length > 0 ? COLORS.blue : COLORS.textDim), cursor: "pointer" }}
                     onClick={(e) => { e.stopPropagation(); setSelectedLead(l); setShowReplay(true); }}>
                     💬 {l.conversations.length}
@@ -737,6 +792,8 @@ function LeadsPage() {
             ))}
           </tbody>
         </table>
+        </div>
+        )}
       </div>
 
       {/* Upload Modal */}
@@ -873,12 +930,12 @@ function CampaignsPage() {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+      <div className="page-header">
         <div><h2 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>AI Campaigns</h2><p style={{ color: COLORS.textMuted, fontSize: 13, margin: "4px 0 0" }}>Manage your riivīv and alīv AI agent campaigns</p></div>
-        <button style={S.btn("primary")} onClick={() => setShowNewCampaign(true)}>+ New Campaign</button>
+        <div className="page-header-actions"><button style={S.btn("primary")} onClick={() => setShowNewCampaign(true)}>+ New Campaign</button></div>
       </div>
 
-      <div style={{ display: "flex", gap: 12, marginBottom: 24 }}>
+      <div className="grid-2col" style={{ marginBottom: 24 }}>
         {[
           { key: "riiviv", label: "riivīv", desc: "Dead & Aged Lead Revival Engine", stat1: "217", s1l: "Revived", stat2: "73", s2l: "Appts Set", color: COLORS.orange },
           { key: "aliv", label: "alīv", desc: "New Lead to Appointment Engine", stat1: "1,930", s1l: "Leads Found", stat2: "140", s2l: "Appts Set", color: COLORS.blue },
@@ -900,23 +957,25 @@ function CampaignsPage() {
 
       <div style={S.card}>
         <div style={S.cardHeader}><span>{activeProduct === "riiviv" ? "riivīv" : "alīv"} Campaigns</span><ComplianceBadge /></div>
+        <div className="table-responsive">
         <table style={S.table}>
-          <thead><tr><th style={S.th}>Campaign</th><th style={S.th}>Status</th><th style={S.th}>Leads</th><th style={S.th}>Contacted</th>{activeProduct === "riiviv" && <th style={S.th}>Revived</th>}<th style={S.th}>Appts</th><th style={S.th}>Channel</th><th style={S.th}>Started</th></tr></thead>
+          <thead><tr><th style={S.th}>Campaign</th><th style={S.th}>Status</th><th style={S.th}>Leads</th><th style={S.th} className="hide-mobile">Contacted</th>{activeProduct === "riiviv" && <th style={S.th} className="hide-mobile">Revived</th>}<th style={S.th}>Appts</th><th style={S.th} className="hide-mobile">Channel</th><th style={S.th} className="hide-mobile">Started</th></tr></thead>
           <tbody>
             {campaigns[activeProduct].map((c) => (
               <tr key={c.id}>
                 <td style={S.td}><span style={{ fontWeight: 600 }}>{c.name}</span></td>
                 <td style={S.td}><span style={S.badge(c.status === "Active" ? COLORS.green : COLORS.textMuted)}>{c.status}</span></td>
                 <td style={S.td}>{c.leads.toLocaleString()}</td>
-                <td style={S.td}>{c.contacted.toLocaleString()}</td>
-                {activeProduct === "riiviv" && <td style={S.td}><span style={{ fontWeight: 600, color: COLORS.orange }}>{c.revived}</span></td>}
+                <td style={S.td} className="hide-mobile">{c.contacted.toLocaleString()}</td>
+                {activeProduct === "riiviv" && <td style={S.td} className="hide-mobile"><span style={{ fontWeight: 600, color: COLORS.orange }}>{c.revived}</span></td>}
                 <td style={S.td}><span style={{ fontWeight: 600, color: COLORS.green }}>{c.appts}</span></td>
-                <td style={S.td}><span style={S.tag(COLORS.textMuted)}>{c.channel}</span></td>
-                <td style={S.td}><span style={{ fontSize: 12, color: COLORS.textMuted }}>{c.started}</span></td>
+                <td style={S.td} className="hide-mobile"><span style={S.tag(COLORS.textMuted)}>{c.channel}</span></td>
+                <td style={S.td} className="hide-mobile"><span style={{ fontSize: 12, color: COLORS.textMuted }}>{c.started}</span></td>
               </tr>
             ))}
           </tbody>
         </table>
+        </div>
       </div>
 
       {showNewCampaign && (
@@ -953,12 +1012,15 @@ function CampaignsPage() {
 // ============================================================
 function AppointmentsPage() {
   const [appointments, setAppointments] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [highlightId, setHighlightId] = useState(() => {
     const hId = sessionStorage.getItem("highlight_appointment");
     return hId ? parseInt(hId) : null;
   });
 
   useEffect(() => {
+    setLoading(true);
     appointmentsApi.list().then((data) => {
       setAppointments(data.map(a => ({
         id: a.id,
@@ -972,7 +1034,8 @@ function AppointmentsPage() {
         showed: a.status === "completed" ? true : null,
         creditApplied: false,
       })));
-    }).catch(console.error);
+    }).catch((err) => setError(err.message))
+      .finally(() => setLoading(false));
   }, []);
 
   // Scroll to highlighted row and clear after timeout
@@ -996,13 +1059,16 @@ function AppointmentsPage() {
   const noShows = appointments.filter(a => a.showed === false);
   const totalCredits = noShows.length * 200;
 
+  if (loading && appointments.length === 0) return <LoadingState message="Loading appointments..." />;
+  if (error && appointments.length === 0) return <ErrorState message={error} />;
+
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+      <div className="page-header">
         <div><h2 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Appointments</h2><p style={{ color: COLORS.textMuted, fontSize: 13, margin: "4px 0 0" }}>{appointments.length} total · {noShows.length} no-shows · ${totalCredits} in credits</p></div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16, marginBottom: 24 }}>
+      <div className="grid-stats" style={{ marginBottom: 24 }}>
         <StatCard label="This Week" value="5" color={COLORS.green} icon="📅" />
         <StatCard label="This Month" value="34" color={COLORS.orange} icon="📊" />
         <StatCard label="Show Rate" value="87" suffix="%" color={COLORS.teal} icon="✅" />
@@ -1028,18 +1094,19 @@ function AppointmentsPage() {
             <select style={S.select}><option>All Reps</option><option>Mike Torres</option><option>Sarah Kim</option><option>Round Robin</option></select>
           </div>
         </div>
+        <div className="table-responsive">
         <table style={S.table}>
           <thead><tr>
-            <th style={S.th}>Lead</th><th style={S.th}>Date & Time</th><th style={S.th}>Type</th><th style={S.th}>Rep</th><th style={S.th}>Product</th><th style={S.th}>Status</th><th style={S.th}>Showed?</th><th style={S.th}>Credit</th>
+            <th style={S.th}>Lead</th><th style={S.th}>Date & Time</th><th style={S.th} className="hide-mobile">Type</th><th style={S.th} className="hide-mobile">Rep</th><th style={S.th} className="hide-mobile">Product</th><th style={S.th}>Status</th><th style={S.th}>Showed?</th><th style={S.th}>Credit</th>
           </tr></thead>
           <tbody>
             {appointments.map((a) => (
               <tr key={a.id} data-appt-id={a.id} style={a.id === highlightId ? { animation: "highlightPulse 1.5s ease-in-out 3" } : undefined}>
                 <td style={S.td}><span style={{ fontWeight: 600 }}>{a.lead}</span>{a.id === highlightId && <span style={{ marginLeft: 8, fontSize: 10, padding: "2px 8px", borderRadius: 4, background: `${COLORS.green}22`, color: COLORS.green, fontWeight: 600, animation: "slideUp 0.5s ease-out" }}>NEW</span>}</td>
                 <td style={S.td}><div style={{ fontSize: 13 }}>{a.date}</div><div style={{ fontSize: 12, color: COLORS.orange, fontWeight: 600 }}>{a.time}</div></td>
-                <td style={S.td}><span style={S.tag(COLORS.textMuted)}>{a.type}</span></td>
-                <td style={S.td}>{a.rep}</td>
-                <td style={S.td}>{a.product}</td>
+                <td style={S.td} className="hide-mobile"><span style={S.tag(COLORS.textMuted)}>{a.type}</span></td>
+                <td style={S.td} className="hide-mobile">{a.rep}</td>
+                <td style={S.td} className="hide-mobile">{a.product}</td>
                 <td style={S.td}><span style={S.badge(a.status === "Confirmed" ? COLORS.green : a.status === "Completed" ? COLORS.blue : COLORS.yellow)}>{a.status}</span></td>
                 {/* FEATURE 1: Show-up tracking */}
                 <td style={S.td}>
@@ -1061,12 +1128,13 @@ function AppointmentsPage() {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* Scheduling config card */}
       <div style={S.card}>
         <div style={S.cardHeader}>Calendar & Scheduling Settings</div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+        <div className="grid-2col">
           <div>
             <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Scheduling Mode</div>
             {["Round Robin (rotate evenly)", "First Available Rep", "Specific Rep Assignment", "Weighted Distribution"].map((mode, i) => (
@@ -1138,7 +1206,7 @@ function ProposalsPage() {
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16, marginBottom: 24 }}>
+      <div className="grid-stats" style={{ marginBottom: 24 }}>
         <StatCard label="Proposals Sent" value="18" color={COLORS.orange} icon="📝" />
         <StatCard label="Viewed" value="14" color={COLORS.blue} icon="👁️" />
         <StatCard label="Accepted" value="8" color={COLORS.green} icon="✅" />
@@ -1147,8 +1215,9 @@ function ProposalsPage() {
 
       <div style={S.card}>
         <div style={S.cardHeader}>Active Proposals</div>
+        <div className="table-responsive">
         <table style={S.table}>
-          <thead><tr><th style={S.th}>ID</th><th style={S.th}>Customer</th><th style={S.th}>System</th><th style={S.th}>Cash</th><th style={S.th}>Loan/mo</th><th style={S.th}>Lease/mo</th><th style={S.th}>Status</th><th style={S.th}>Actions</th></tr></thead>
+          <thead><tr><th style={S.th}>ID</th><th style={S.th}>Customer</th><th style={S.th}>System</th><th style={S.th}>Cash</th><th style={S.th} className="hide-mobile">Loan/mo</th><th style={S.th} className="hide-mobile">Lease/mo</th><th style={S.th}>Status</th><th style={S.th}>Actions</th></tr></thead>
           <tbody>
             {SAMPLE_PROPOSALS.map((p) => (
               <tr key={p.id}>
@@ -1156,8 +1225,8 @@ function ProposalsPage() {
                 <td style={S.td}><span style={{ fontWeight: 600 }}>{p.customer}</span></td>
                 <td style={S.td}>{p.system}</td>
                 <td style={S.td}>${p.cashPrice.toLocaleString()}</td>
-                <td style={S.td}>${p.loanPayment}/mo</td>
-                <td style={S.td}>${p.leasePayment}/mo</td>
+                <td style={S.td} className="hide-mobile">${p.loanPayment}/mo</td>
+                <td style={S.td} className="hide-mobile">${p.leasePayment}/mo</td>
                 <td style={S.td}><span style={S.badge(p.status === "Viewed" ? COLORS.blue : COLORS.yellow)}>{p.status}</span></td>
                 <td style={S.td}><div style={{ display: "flex", gap: 6 }}>
                   <button style={{ ...S.btn("ghost"), padding: "5px 10px", fontSize: 11 }} onClick={() => setSelectedProposal(p)}>View</button>
@@ -1167,6 +1236,7 @@ function ProposalsPage() {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* FEATURE 4: White-Label Branding Config */}
@@ -1176,7 +1246,7 @@ function ProposalsPage() {
           <span style={S.badge(COLORS.green)}>✓ Configured</span>
         </div>
         <p style={{ fontSize: 13, color: COLORS.textMuted, marginBottom: 16 }}>Proposals are fully branded with your company identity. Catalyst appears only as a subtle "Powered by" footer.</p>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
+        <div className="grid-3col">
           <div>
             <label style={{ fontSize: 12, color: COLORS.textMuted, display: "block", marginBottom: 6 }}>Company Name on Proposals</label>
             <input style={S.input} value={whiteLabel.companyName} onChange={(e) => setWhiteLabel({ ...whiteLabel, companyName: e.target.value })} />
@@ -1200,7 +1270,7 @@ function ProposalsPage() {
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+      <div className="grid-2col">
         <div style={S.card}>
           <div style={S.cardHeader}>Financing Options</div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
@@ -1333,7 +1403,7 @@ function VoiceAIPage() {
           </div>
           <div style={S.card}>
             <div style={S.cardHeader}>Settings</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+            <div className="grid-2col">
               <div><label style={{ fontSize: 12, color: COLORS.textMuted }}>Speaking Speed</label><input type="range" min="0.5" max="1.5" step="0.1" defaultValue="1.0" style={{ width: "100%" }} /></div>
               <div><label style={{ fontSize: 12, color: COLORS.textMuted }}>Tone Warmth</label><input type="range" min="0" max="10" step="1" defaultValue="7" style={{ width: "100%" }} /></div>
             </div>
@@ -1423,7 +1493,7 @@ function ConversationReplayPage() {
     <div>
       <div style={{ marginBottom: 24 }}><h2 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Conversation Replay</h2><p style={{ color: COLORS.textMuted, fontSize: 13, margin: "4px 0 0" }}>Review all AI conversations — learn what works, refine what doesn't</p></div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16, marginBottom: 24 }}>
+      <div className="grid-stats" style={{ marginBottom: 24 }}>
         <StatCard label="Total Conversations" value={allConvos.length} color={COLORS.orange} icon="💬" />
         <StatCard label="Appointments Set" value={allConvos.filter(c => c.outcome === "appointment_set").length} color={COLORS.green} icon="📅" />
         <StatCard label="Avg Sentiment" value="Positive" color={COLORS.greenLight} icon="😊" />
@@ -1434,23 +1504,25 @@ function ConversationReplayPage() {
 
       <div style={S.card}>
         <div style={S.cardHeader}><span>All Conversations</span><span style={{ fontSize: 12, color: COLORS.textMuted }}>{filtered.length} conversations</span></div>
+        <div className="table-responsive">
         <table style={S.table}>
-          <thead><tr><th style={S.th}>Lead</th><th style={S.th}>Type</th><th style={S.th}>Date</th><th style={S.th}>Agent</th><th style={S.th}>Duration</th><th style={S.th}>Outcome</th><th style={S.th}>Sentiment</th><th style={S.th}>Action</th></tr></thead>
+          <thead><tr><th style={S.th}>Lead</th><th style={S.th}>Type</th><th style={S.th}>Date</th><th style={S.th} className="hide-mobile">Agent</th><th style={S.th} className="hide-mobile">Duration</th><th style={S.th}>Outcome</th><th style={S.th} className="hide-mobile">Sentiment</th><th style={S.th}>Action</th></tr></thead>
           <tbody>
             {filtered.map((c) => (
               <tr key={c.id}>
                 <td style={S.td}><span style={{ fontWeight: 600 }}>{c.leadName}</span></td>
                 <td style={S.td}>{c.type === "voice" ? "📞" : c.type === "sms" ? "💬" : "✉️"} {c.type}</td>
                 <td style={S.td}>{c.date}</td>
-                <td style={S.td}>{c.agent}</td>
-                <td style={S.td}>{c.duration || "—"}</td>
+                <td style={S.td} className="hide-mobile">{c.agent}</td>
+                <td style={S.td} className="hide-mobile">{c.duration || "—"}</td>
                 <td style={S.td}><span style={S.badge(outcomeColors[c.outcome])}>{outcomeLabels[c.outcome]}</span></td>
-                <td style={S.td}><span style={{ fontSize: 12, color: sentimentColors[c.sentiment] }}>{c.sentiment}</span></td>
+                <td style={S.td} className="hide-mobile"><span style={{ fontSize: 12, color: sentimentColors[c.sentiment] }}>{c.sentiment}</span></td>
                 <td style={S.td}><button style={{ ...S.btn("ghost"), padding: "5px 12px", fontSize: 11 }} onClick={() => setSelected(c)}>▶ Replay</button></td>
               </tr>
             ))}
           </tbody>
         </table>
+        </div>
       </div>
 
       {selected && (
@@ -1488,94 +1560,240 @@ function ConversationReplayPage() {
 }
 
 // ============================================================
-// CONNECT YOUR TECH
+// CONNECT YOUR TECH — Integration Hub
 // ============================================================
 function ConnectTechPage() {
-  const [crms, setCrms] = useState(CRM_INTEGRATIONS);
-  const [calendars, setCalendars] = useState(CALENDAR_INTEGRATIONS);
-  const [activeTab, setActiveTab] = useState("CRM");
+  const categories = Object.entries(INTEGRATION_CATEGORIES);
+  const [activeTab, setActiveTab] = useState(categories[0][0]);
+  const [connections, setConnections] = useState(integrationsService.getConnections());
+  const [connectModal, setConnectModal] = useState(null);
+  const [formData, setFormData] = useState({});
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState(null);
+
+  const totalConnected = Object.keys(connections).filter(k => connections[k]?.connected).length;
+  const tabLabels = categories.map(([key, cat]) => cat.label);
+
+  const handleConnect = (integration) => {
+    if (integration.authType === "oauth") {
+      // OAuth flow — would redirect to backend auth URL
+      alert(`OAuth flow: In production, this redirects to ${integration.oauthUrl}`);
+      return;
+    }
+    setFormData({});
+    setTestResult(null);
+    setConnectModal(integration);
+  };
+
+  const handleDisconnect = (integrationId) => {
+    integrationsService.disconnect(integrationId);
+    setConnections(integrationsService.getConnections());
+  };
+
+  const handleSaveConnection = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const result = await integrationsService.testConnection(connectModal.id);
+      if (result.success) {
+        integrationsService.saveConnection(connectModal.id, formData);
+        setConnections(integrationsService.getConnections());
+        setTestResult({ success: true, message: "Connected successfully" });
+        setTimeout(() => setConnectModal(null), 1200);
+      } else {
+        setTestResult({ success: false, message: result.message || "Connection failed" });
+      }
+    } catch (err) {
+      setTestResult({ success: false, message: err.message });
+    }
+    setTesting(false);
+  };
+
+  const activeCategory = INTEGRATION_CATEGORIES[activeTab];
 
   return (
     <div>
-      <div style={{ marginBottom: 24 }}><h2 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Connect Your Tech</h2><p style={{ color: COLORS.textMuted, fontSize: 13, margin: "4px 0 0" }}>Integrate CRM, calendars, and lead sources</p></div>
-      <TabBar tabs={["CRM", "Calendars", "Lead Sources", "Reaction Stack"]} active={activeTab} onChange={setActiveTab} />
+      <div className="page-header">
+        <div>
+          <h2 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Connect Your Tech</h2>
+          <p style={{ color: COLORS.textMuted, fontSize: 13, margin: "4px 0 0" }}>
+            {totalConnected} integration{totalConnected !== 1 ? "s" : ""} connected
+          </p>
+        </div>
+        <div className="page-header-actions">
+          <span style={S.badge(totalConnected > 0 ? COLORS.green : COLORS.textMuted)}>
+            {totalConnected > 0 ? `${totalConnected} Active` : "None connected"}
+          </span>
+        </div>
+      </div>
 
-      {activeTab === "CRM" && (
-        <div style={S.card}>
-          <div style={S.cardHeader}><span>CRM Integrations</span><span style={{ fontSize: 12, color: COLORS.textMuted }}>{crms.filter(c => c.connected).length} connected</span></div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12 }}>
-            {crms.map((crm, i) => (
-              <div key={i} style={{ padding: 20, borderRadius: 12, border: `1px solid ${crm.connected ? COLORS.green : COLORS.border}`, background: crm.connected ? `${COLORS.green}10` : "transparent", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  <span style={{ fontSize: 24 }}>{crm.icon}</span>
-                  <div><div style={{ fontSize: 14, fontWeight: 600 }}>{crm.name}</div><div style={{ fontSize: 11, color: crm.connected ? COLORS.green : COLORS.textMuted }}>{crm.connected ? "✓ Connected" : "Not connected"}</div></div>
+      {/* Status overview */}
+      <div className="grid-stats" style={{ marginBottom: 24 }}>
+        {categories.map(([key, cat]) => {
+          const connected = cat.items.filter(i => connections[i.id]?.connected || i.backendConfigured).length;
+          return (
+            <StatCard key={key} label={cat.label} value={`${connected}/${cat.items.length}`} color={connected > 0 ? COLORS.green : COLORS.textMuted} icon={cat.items[0]?.icon || "🔌"} />
+          );
+        })}
+      </div>
+
+      <TabBar tabs={tabLabels} active={activeCategory?.label} onChange={(label) => {
+        const entry = categories.find(([, cat]) => cat.label === label);
+        if (entry) setActiveTab(entry[0]);
+      }} />
+
+      <div style={S.card}>
+        <div style={S.cardHeader}>
+          <span>{activeCategory?.label} Integrations</span>
+          <span style={{ fontSize: 12, color: COLORS.textMuted }}>
+            {activeCategory?.items.filter(i => connections[i.id]?.connected || i.backendConfigured).length} connected
+          </span>
+        </div>
+        <div className="integration-grid">
+          {activeCategory?.items.map((integration) => {
+            const isConnected = connections[integration.id]?.connected || integration.backendConfigured;
+            return (
+              <div key={integration.id} className="integration-card" style={{
+                border: `1px solid ${isConnected ? COLORS.green : COLORS.border}`,
+                background: isConnected ? `${COLORS.green}08` : "transparent",
+              }}>
+                <div className="integration-card-info">
+                  <span style={{ fontSize: 28 }}>{integration.icon}</span>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 600 }}>{integration.name}</div>
+                    <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 4 }}>{integration.description}</div>
+                    <div style={{ fontSize: 11 }}>
+                      {isConnected ? (
+                        <span style={{ color: COLORS.green, fontWeight: 600 }}>
+                          {integration.backendConfigured ? "✓ Configured via .env" : `✓ Connected ${connections[integration.id]?.connectedAt ? new Date(connections[integration.id].connectedAt).toLocaleDateString() : ""}`}
+                        </span>
+                      ) : (
+                        <span style={{ color: COLORS.textDim }}>Not connected</span>
+                      )}
+                    </div>
+                  </div>
                 </div>
-                <button style={S.btn(crm.connected ? "success" : "secondary")} onClick={() => { const u = [...crms]; u[i].connected = !u[i].connected; setCrms(u); }}>{crm.connected ? "Disconnect" : "Connect"}</button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {activeTab === "Calendars" && (
-        <div style={S.card}>
-          <div style={S.cardHeader}><span>Calendar Integrations</span></div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12, marginBottom: 16 }}>
-            {calendars.map((cal, i) => (
-              <div key={i} style={{ padding: 20, borderRadius: 12, border: `1px solid ${cal.connected ? COLORS.green : COLORS.border}`, background: cal.connected ? `${COLORS.green}10` : "transparent", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  <span style={{ fontSize: 24 }}>{cal.icon}</span>
-                  <div><div style={{ fontSize: 14, fontWeight: 600 }}>{cal.name}</div><div style={{ fontSize: 11, color: cal.connected ? COLORS.green : COLORS.textMuted }}>{cal.connected ? "✓ Connected" : "Not connected"}</div></div>
+                <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                  {isConnected && !integration.backendConfigured && (
+                    <button style={{ ...S.btn("ghost"), padding: "8px 12px", fontSize: 11 }} onClick={() => handleDisconnect(integration.id)}>Disconnect</button>
+                  )}
+                  {!isConnected && (
+                    <button style={{ ...S.btn("primary"), padding: "8px 16px", fontSize: 12 }} onClick={() => handleConnect(integration)}>Connect</button>
+                  )}
+                  {isConnected && (
+                    <button style={{ ...S.btn("ghost"), padding: "8px 12px", fontSize: 11 }} onClick={() => handleConnect(integration)}>Configure</button>
+                  )}
                 </div>
-                <button style={S.btn(cal.connected ? "success" : "secondary")} onClick={() => { const u = [...calendars]; u[i].connected = !u[i].connected; setCalendars(u); }}>{cal.connected ? "Disconnect" : "Connect"}</button>
               </div>
-            ))}
-          </div>
-          <div style={{ padding: 16, background: COLORS.surfaceAlt, borderRadius: 10 }}>
-            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Multi-Calendar Settings</div>
-            <Toggle value={true} label="Round-robin across reps" /><div style={{ marginTop: 8 }}><Toggle value={true} label="Buffer time (15 min)" /></div>
-            <div style={{ marginTop: 8 }}><Toggle value={true} label="Auto-sync to all calendars" /></div>
-          </div>
+            );
+          })}
         </div>
-      )}
+      </div>
 
-      {activeTab === "Lead Sources" && (
+      {/* API Keys & Webhook Info */}
+      <div className="grid-2col">
         <div style={S.card}>
-          <div style={S.cardHeader}>Lead Ingestion Methods</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 12 }}>
-            {[
-              { icon: "☁️", title: "CRM Sync", status: "Active" }, { icon: "📄", title: "File Upload", status: "Active" },
-              { icon: "📸", title: "Image/Screenshot", status: "Active" }, { icon: "🌐", title: "Web Scraping", status: "alīv only" },
-              { icon: "📱", title: "Inbound Forms", status: "Active" }, { icon: "📞", title: "Inbound Calls", status: "Active" },
-              { icon: "💬", title: "SMS/Chat", status: "Active" }, { icon: "📧", title: "Email Inbox", status: "Active" },
-              { icon: "📲", title: "Social Media", status: "Coming Soon" }, { icon: "🔌", title: "API Webhook", status: "Active" },
-            ].map((src, i) => (
-              <div key={i} style={{ padding: 16, borderRadius: 10, border: `1px solid ${COLORS.border}` }}>
-                <div style={{ fontSize: 24, marginBottom: 6 }}>{src.icon}</div>
-                <div style={{ fontSize: 13, fontWeight: 600 }}>{src.title}</div>
-                <span style={S.badge(src.status === "Active" ? COLORS.green : src.status === "Coming Soon" ? COLORS.yellow : COLORS.blue)}>{src.status}</span>
+          <div style={S.cardHeader}>Webhook Endpoints</div>
+          <p style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 16 }}>Use these URLs to receive events from external services.</p>
+          {[
+            { label: "Inbound SMS", url: "/api/webhooks/twilio/sms", status: "active" },
+            { label: "Call Status", url: "/api/webhooks/twilio/call-status", status: "active" },
+            { label: "Stripe Billing", url: "/api/billing/webhook", status: "active" },
+            { label: "Custom Events", url: "/api/reactor/emit", status: "active" },
+          ].map((wh, i) => (
+            <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: `1px solid ${COLORS.border}22` }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>{wh.label}</div>
+                <div style={{ fontSize: 11, color: COLORS.textMuted, fontFamily: "monospace" }}>{wh.url}</div>
               </div>
-            ))}
-          </div>
+              <span style={S.badge(COLORS.green)}>{wh.status}</span>
+            </div>
+          ))}
         </div>
-      )}
-
-      {activeTab === "Reaction Stack" && (
         <div style={S.card}>
-          <div style={S.cardHeader}>The Reaction Stack — Enhanced Features</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 }}>
-            {[
-              { name: "Bond", desc: "AI-Native CRM", features: ["Deep lead history", "Auto pipeline management", "AI upsell suggestions"], color: COLORS.blue },
-              { name: "Solvent", desc: "Autonomous AI Permitting", features: ["Auto permit requirements", "Jurisdiction compliance", "Status tracking"], color: COLORS.green },
-              { name: "Reactor", desc: "AI Operations OS", features: ["Process automation", "Resource allocation", "Predictive analytics"], color: COLORS.purple },
-            ].map((p, i) => (
-              <div key={i} style={{ padding: 24, borderRadius: 12, border: `1px solid ${COLORS.border}`, background: `${p.color}08` }}>
-                <div style={{ fontSize: 20, fontWeight: 700, color: p.color }}>{p.name}</div>
-                <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 12 }}>{p.desc}</div>
-                {p.features.map((f, j) => <div key={j} style={{ fontSize: 12, color: COLORS.textMuted, padding: "3px 0" }}><span style={{ color: p.color }}>✦</span> {f}</div>)}
-                <button style={{ ...S.btn("secondary"), marginTop: 12 }}>Connect {p.name}</button>
+          <div style={S.cardHeader}>Environment Configuration</div>
+          <p style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 16 }}>API keys and tokens configured via environment variables.</p>
+          {[
+            { key: "TWILIO_ACCOUNT_SID", status: "set" },
+            { key: "TWILIO_AUTH_TOKEN", status: "set" },
+            { key: "ANTHROPIC_API_KEY", status: "set" },
+            { key: "RESEND_API_KEY", status: "set" },
+            { key: "STRIPE_SECRET_KEY", status: "check" },
+            { key: "DATABASE_URL", status: "set" },
+          ].map((env, i) => (
+            <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: `1px solid ${COLORS.border}22` }}>
+              <span style={{ fontSize: 12, fontFamily: "monospace", color: COLORS.textMuted }}>{env.key}</span>
+              <span style={{ fontSize: 11, color: env.status === "set" ? COLORS.green : COLORS.yellow, fontWeight: 600 }}>
+                {env.status === "set" ? "✓ Set" : "⚠ Check"}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Connection Modal */}
+      {connectModal && (
+        <div style={S.modal} onClick={() => setConnectModal(null)}>
+          <div style={{ ...S.modalContent, maxWidth: 480 }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+                  <span style={{ fontSize: 28 }}>{connectModal.icon}</span>
+                  <h3 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>Connect {connectModal.name}</h3>
+                </div>
+                <p style={{ color: COLORS.textMuted, fontSize: 12, margin: 0 }}>{connectModal.description}</p>
               </div>
-            ))}
+              <button style={{ ...S.btn("ghost"), padding: "6px 10px" }} onClick={() => setConnectModal(null)}>✕</button>
+            </div>
+
+            {connectModal.authType === "oauth" ? (
+              <div style={{ textAlign: "center", padding: "20px 0" }}>
+                <p style={{ fontSize: 13, color: COLORS.textMuted, marginBottom: 16 }}>
+                  Click below to authorize Catalyst to access your {connectModal.name} account.
+                </p>
+                <button style={{ ...S.btn("primary"), padding: "12px 32px" }}>Authorize with {connectModal.name}</button>
+              </div>
+            ) : (
+              <div style={{ display: "grid", gap: 16 }}>
+                {connectModal.fields?.map((field) => (
+                  <div key={field.key}>
+                    <label style={{ fontSize: 12, color: COLORS.textMuted, display: "block", marginBottom: 6 }}>{field.label}</label>
+                    <input
+                      style={S.input}
+                      type={field.type === "password" ? "password" : "text"}
+                      placeholder={`Enter ${field.label.toLowerCase()}`}
+                      value={formData[field.key] || ""}
+                      onChange={(e) => setFormData({ ...formData, [field.key]: e.target.value })}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {testResult && (
+              <div style={{
+                marginTop: 16, padding: 12, borderRadius: 8,
+                background: testResult.success ? `${COLORS.green}15` : `${COLORS.red}15`,
+                border: `1px solid ${testResult.success ? COLORS.green : COLORS.red}33`,
+              }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: testResult.success ? COLORS.green : COLORS.red }}>
+                  {testResult.success ? "✓ " : "✗ "}{testResult.message}
+                </div>
+              </div>
+            )}
+
+            {connectModal.authType !== "oauth" && (
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20 }}>
+                <button style={S.btn("ghost")} onClick={() => setConnectModal(null)}>Cancel</button>
+                <button
+                  style={{ ...S.btn("primary"), opacity: testing ? 0.7 : 1 }}
+                  onClick={handleSaveConnection}
+                  disabled={testing}
+                >
+                  {testing ? "Testing..." : "Test & Connect"}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1584,119 +1802,376 @@ function ConnectTechPage() {
 }
 
 // ============================================================
-// BILLING — with Features 1 & 5
+// BILLING — with Features 1 & 5 + Stripe readiness
 // ============================================================
 function BillingPage() {
+  const [billingData, setBillingData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState("Overview");
+
+  useEffect(() => {
+    // Try real API first, fall back to mock
+    fetch("/api/billing", {
+      headers: { Authorization: `Bearer ${localStorage.getItem("catalyst_token")}` },
+    }).then(r => r.ok ? r.json() : MOCK_BILLING)
+      .then(setBillingData)
+      .catch(() => setBillingData(MOCK_BILLING))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return <LoadingState message="Loading billing..." />;
+
   const noShowCredits = 600;
+  const invoiceTotal = 20350 - noShowCredits;
+
   return (
     <div>
-      <div style={{ marginBottom: 24 }}><h2 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Billing & Subscription</h2></div>
-
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 20 }}>
-        <div style={S.card}>
-          <div style={S.cardHeader}>Current Plan</div>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-            <div><div style={{ fontSize: 20, fontWeight: 700, color: COLORS.orangeLight }}>Growth Tier</div><div style={{ fontSize: 12, color: COLORS.textMuted }}>riivīv + alīv Bundle</div></div>
-            <span style={S.badge(COLORS.green)}>Active</span>
-          </div>
-          {[
-            ["Setup Fee (paid)", "$3,500.00"], ["Monthly Maintenance", "$750.00"],
-            ["riivīv per appointment", "$400.00"], ["alīv per appointment", "$500.00"],
-            ["Bundle discount", "Single maintenance fee"],
-            ["Show-Up Guarantee", "$200 credit per no-show"],
-          ].map(([l, v], i) => (
-            <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: `1px solid ${COLORS.border}22` }}>
-              <span style={{ fontSize: 13, color: COLORS.textMuted }}>{l}</span>
-              <span style={{ fontSize: 13, fontWeight: 600, color: l.includes("Guarantee") ? COLORS.teal : COLORS.text }}>{v}</span>
-            </div>
-          ))}
-        </div>
-
-        <div style={S.card}>
-          <div style={S.cardHeader}>This Month's Invoice</div>
-          <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 16 }}>Mar 1 – Mar 31, 2026</div>
-          {[
-            ["Maintenance fee", "$750.00", null],
-            ["riivīv appointments (34 × $400)", "$13,600.00", null],
-            ["alīv appointments (12 × $500)", "$6,000.00", null],
-            ["No-show credits (3 × $200)", `-$${noShowCredits}.00`, COLORS.teal],
-          ].map(([l, v, c], i) => (
-            <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: `1px solid ${COLORS.border}22` }}>
-              <span style={{ fontSize: 13, color: COLORS.textMuted }}>{l}</span>
-              <span style={{ fontSize: 13, fontWeight: 600, color: c || COLORS.text }}>{v}</span>
-            </div>
-          ))}
-          <div style={{ display: "flex", justifyContent: "space-between", padding: "12px 0", borderTop: `2px solid ${COLORS.border}`, marginTop: 8 }}>
-            <span style={{ fontSize: 15, fontWeight: 700 }}>Total Due</span>
-            <span style={{ fontSize: 15, fontWeight: 700, color: COLORS.orangeLight }}>${(20350 - noShowCredits).toLocaleString()}.00</span>
-          </div>
-          <button style={{ ...S.btn("primary"), width: "100%", marginTop: 16 }}>💳 Pay with Stripe</button>
+      <div className="page-header">
+        <div><h2 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Billing & Subscription</h2><p style={{ color: COLORS.textMuted, fontSize: 13, margin: "4px 0 0" }}>Manage your plan, invoices, and payment methods</p></div>
+        <div className="page-header-actions">
+          <button style={S.btn("secondary")} onClick={async () => {
+            try {
+              const res = await fetch("/api/billing/portal", {
+                method: "POST",
+                headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("catalyst_token")}` },
+                body: JSON.stringify({ returnUrl: window.location.href }),
+              });
+              const data = await res.json();
+              if (data.url) window.location.href = data.url;
+              else alert("Stripe portal not configured yet. Set STRIPE_SECRET_KEY in environment.");
+            } catch { alert("Stripe not configured. Add STRIPE_SECRET_KEY to connect billing."); }
+          }}>Manage in Stripe</button>
         </div>
       </div>
 
-      <div style={S.card}>
-        <div style={S.cardHeader}>Pricing Tiers</div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
-          {[0, 1, 2].map((tier) => (
-            <div key={tier} style={{ padding: 24, borderRadius: 12, textAlign: "center", border: `2px solid ${tier === 1 ? COLORS.orange : COLORS.border}`, background: tier === 1 ? COLORS.orangeGlow : "transparent" }}>
-              {tier === 1 && <div style={{ fontSize: 10, fontWeight: 700, color: COLORS.orange, marginBottom: 8, textTransform: "uppercase" }}>Most Popular</div>}
-              <div style={{ fontSize: 18, fontWeight: 700 }}>{TIERS.riiviv.tierNames[tier]}</div>
-              <div style={{ fontSize: 28, fontWeight: 700, color: COLORS.orangeLight, margin: "12px 0" }}>${TIERS.riiviv.setup[tier].toLocaleString()}</div>
-              <div style={{ fontSize: 12, color: COLORS.textMuted }}>Setup Fee</div>
-              <div style={{ margin: "16px 0", height: 1, background: COLORS.border }} />
-              <div style={{ fontSize: 13, marginBottom: 4 }}>${TIERS.riiviv.maintenance[tier]}/mo maintenance</div>
-              <div style={{ fontSize: 13, marginBottom: 4 }}>$400/appt (riivīv) · $500/appt (alīv)</div>
-              <div style={{ fontSize: 12, color: COLORS.green, marginTop: 8 }}>Bundle: 1 maintenance fee</div>
-              <div style={{ fontSize: 12, color: COLORS.teal, marginTop: 4 }}>🛡️ $200 no-show credit</div>
+      <TabBar tabs={["Overview", "Invoices", "Plans"]} active={activeTab} onChange={setActiveTab} />
+
+      {activeTab === "Overview" && (
+        <>
+          <div className="grid-stats" style={{ marginBottom: 24 }}>
+            <StatCard label="Current Plan" value="Growth" color={COLORS.orange} icon="⭐" />
+            <StatCard label="This Month" value={`$${invoiceTotal.toLocaleString()}`} color={COLORS.blue} icon="💰" />
+            <StatCard label="No-Show Credits" value={`$${noShowCredits}`} color={COLORS.teal} icon="🛡️" />
+            <StatCard label="Total Appointments" value="46" color={COLORS.green} icon="📅" />
+          </div>
+
+          <div className="grid-2col" style={{ marginBottom: 20 }}>
+            <div style={S.card}>
+              <div style={S.cardHeader}>Current Plan</div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                <div><div style={{ fontSize: 20, fontWeight: 700, color: COLORS.orangeLight }}>Growth Tier</div><div style={{ fontSize: 12, color: COLORS.textMuted }}>riivīv + alīv Bundle</div></div>
+                <span style={S.badge(COLORS.green)}>Active</span>
+              </div>
+              {[
+                ["Setup Fee (paid)", "$3,500.00"], ["Monthly Maintenance", "$750.00"],
+                ["riivīv per appointment", "$400.00"], ["alīv per appointment", "$500.00"],
+                ["Bundle discount", "Single maintenance fee"],
+                ["Show-Up Guarantee", "$200 credit per no-show"],
+              ].map(([l, v], i) => (
+                <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: `1px solid ${COLORS.border}22` }}>
+                  <span style={{ fontSize: 13, color: COLORS.textMuted }}>{l}</span>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: l.includes("Guarantee") ? COLORS.teal : COLORS.text }}>{v}</span>
+                </div>
+              ))}
             </div>
-          ))}
+
+            <div style={S.card}>
+              <div style={S.cardHeader}>Payment Method</div>
+              <div style={{ padding: 20, borderRadius: 10, border: `1px solid ${COLORS.border}`, marginBottom: 16 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <span style={{ fontSize: 24 }}>💳</span>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 600 }}>Visa ending in 4242</div>
+                    <div style={{ fontSize: 11, color: COLORS.textMuted }}>Expires 12/2027</div>
+                  </div>
+                </div>
+              </div>
+              <button style={{ ...S.btn("secondary"), width: "100%" }}>Update Payment Method</button>
+              <div style={{ marginTop: 16, padding: 14, background: `${COLORS.teal}10`, borderRadius: 8, border: `1px solid ${COLORS.teal}33` }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: COLORS.teal, marginBottom: 4 }}>🛡️ Show-Up Guarantee Active</div>
+                <div style={{ fontSize: 12, color: COLORS.textMuted }}>3 no-shows this month = <strong style={{ color: COLORS.teal }}>${noShowCredits}</strong> in credits auto-applied.</div>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {activeTab === "Invoices" && (
+        <div style={S.card}>
+          <div style={S.cardHeader}><span>Invoice History</span></div>
+          <div className="table-responsive">
+          <table style={S.table}>
+            <thead><tr><th style={S.th}>Period</th><th style={S.th}>Appointments</th><th style={S.th}>Credits</th><th style={S.th}>Total</th><th style={S.th}>Status</th><th style={S.th}>Action</th></tr></thead>
+            <tbody>
+              {[
+                { period: "Mar 2026", appts: 46, credits: 600, total: invoiceTotal, status: "Due" },
+                { period: "Feb 2026", appts: 38, credits: 400, total: 17750, status: "Paid" },
+                { period: "Jan 2026", appts: 32, credits: 200, total: 15150, status: "Paid" },
+                { period: "Dec 2025", appts: 28, credits: 0, total: 13550, status: "Paid" },
+              ].map((inv, i) => (
+                <tr key={i}>
+                  <td style={S.td}><span style={{ fontWeight: 600 }}>{inv.period}</span></td>
+                  <td style={S.td}>{inv.appts}</td>
+                  <td style={S.td}><span style={{ color: inv.credits > 0 ? COLORS.teal : COLORS.textMuted }}>{inv.credits > 0 ? `-$${inv.credits}` : "—"}</span></td>
+                  <td style={S.td}><span style={{ fontWeight: 600 }}>${inv.total.toLocaleString()}</span></td>
+                  <td style={S.td}><span style={S.badge(inv.status === "Paid" ? COLORS.green : COLORS.orange)}>{inv.status}</span></td>
+                  <td style={S.td}>
+                    {inv.status === "Due" ? (
+                      <button style={{ ...S.btn("primary"), padding: "5px 12px", fontSize: 11 }}>Pay Now</button>
+                    ) : (
+                      <button style={{ ...S.btn("ghost"), padding: "5px 12px", fontSize: 11 }}>Download</button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          </div>
         </div>
-      </div>
+      )}
+
+      {activeTab === "Plans" && (
+        <div style={S.card}>
+          <div style={S.cardHeader}>Available Plans</div>
+          <div className="grid-3col">
+            {[0, 1, 2].map((tier) => (
+              <div key={tier} style={{ padding: 24, borderRadius: 12, textAlign: "center", border: `2px solid ${tier === 1 ? COLORS.orange : COLORS.border}`, background: tier === 1 ? COLORS.orangeGlow : "transparent" }}>
+                {tier === 1 && <div style={{ fontSize: 10, fontWeight: 700, color: COLORS.orange, marginBottom: 8, textTransform: "uppercase" }}>Current Plan</div>}
+                <div style={{ fontSize: 18, fontWeight: 700 }}>{TIERS.riiviv.tierNames[tier]}</div>
+                <div style={{ fontSize: 28, fontWeight: 700, color: COLORS.orangeLight, margin: "12px 0" }}>${TIERS.riiviv.setup[tier].toLocaleString()}</div>
+                <div style={{ fontSize: 12, color: COLORS.textMuted }}>Setup Fee</div>
+                <div style={{ margin: "16px 0", height: 1, background: COLORS.border }} />
+                <div style={{ fontSize: 13, marginBottom: 4 }}>${TIERS.riiviv.maintenance[tier]}/mo maintenance</div>
+                <div style={{ fontSize: 13, marginBottom: 4 }}>$400/appt (riivīv) · $500/appt (alīv)</div>
+                <div style={{ fontSize: 12, color: COLORS.green, marginTop: 8 }}>Bundle: 1 maintenance fee</div>
+                <div style={{ fontSize: 12, color: COLORS.teal, marginTop: 4 }}>🛡️ $200 no-show credit</div>
+                <button style={{ ...S.btn(tier === 1 ? "secondary" : "primary"), width: "100%", marginTop: 16 }}>
+                  {tier === 1 ? "Current Plan" : tier === 0 ? "Downgrade" : "Upgrade"}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 // ============================================================
-// SETTINGS
+// SETTINGS — Full Configuration Hub
 // ============================================================
 function SettingsPage() {
+  const [activeTab, setActiveTab] = useState("Company");
+  const [saved, setSaved] = useState(false);
+
+  const handleSave = () => {
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+
   return (
     <div>
-      <div style={{ marginBottom: 24 }}><h2 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Settings</h2></div>
-      <div style={S.card}>
-        <div style={S.cardHeader}>Company Profile</div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-          <div><label style={{ fontSize: 12, color: COLORS.textMuted, display: "block", marginBottom: 6 }}>Company Name</label><input style={S.input} defaultValue="SunPower Solar Solutions" /></div>
-          <div><label style={{ fontSize: 12, color: COLORS.textMuted, display: "block", marginBottom: 6 }}>Industry</label><select style={{ ...S.select, width: "100%" }}>{INDUSTRIES.map(i => <option key={i}>{i}</option>)}</select></div>
-          <div><label style={{ fontSize: 12, color: COLORS.textMuted, display: "block", marginBottom: 6 }}>Phone</label><input style={S.input} defaultValue="(555) 100-2000" /></div>
-          <div><label style={{ fontSize: 12, color: COLORS.textMuted, display: "block", marginBottom: 6 }}>Email</label><input style={S.input} defaultValue="info@sunpowersolar.com" /></div>
-        </div>
-        <button style={{ ...S.btn("primary"), marginTop: 16 }}>Save Changes</button>
-      </div>
-      <div style={S.card}>
-        <div style={S.cardHeader}>Team Members</div>
-        <table style={S.table}>
-          <thead><tr><th style={S.th}>Name</th><th style={S.th}>Email</th><th style={S.th}>Role</th><th style={S.th}>Status</th></tr></thead>
-          <tbody>
-            {[{ name: "John Owner", email: "john@sunpowersolar.com", role: "Admin" }, { name: "Mike Torres", email: "mike@sunpowersolar.com", role: "Sales Rep" }, { name: "Sarah Kim", email: "sarah@sunpowersolar.com", role: "Sales Rep" }].map((m, i) => (
-              <tr key={i}><td style={S.td}>{m.name}</td><td style={S.td}>{m.email}</td><td style={S.td}><span style={S.tag(m.role === "Admin" ? COLORS.orange : COLORS.blue)}>{m.role}</span></td><td style={S.td}><span style={S.badge(COLORS.green)}>Active</span></td></tr>
-            ))}
-          </tbody>
-        </table>
-        <button style={{ ...S.btn("secondary"), marginTop: 12 }}>+ Invite Team Member</button>
-      </div>
-      <div style={S.card}>
-        <div style={S.cardHeader}>AI Learning Preferences</div>
-        <div style={{ display: "grid", gap: 10 }}>
-          <Toggle value={true} label="Continuous learning from call outcomes" />
-          <Toggle value={true} label="Auto-improve talk tracks" />
-          <Toggle value={true} label="Industry-specific sales psychology" />
-          <Toggle value={true} label="Auto-suggest upsell opportunities" />
-          {/* FEATURE 3: Score decay config */}
-          <Toggle value={true} label="Automatic lead score decay over time" />
-          <Toggle value={true} label="Market condition score boosting (utility rates, incentives)" />
+      <div className="page-header">
+        <div><h2 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Settings</h2><p style={{ color: COLORS.textMuted, fontSize: 13, margin: "4px 0 0" }}>Manage your workspace, team, and preferences</p></div>
+        <div className="page-header-actions">
+          {saved && <span style={{ fontSize: 12, color: COLORS.green, fontWeight: 600 }}>✓ Saved</span>}
+          <button style={S.btn("primary")} onClick={handleSave}>Save Changes</button>
         </div>
       </div>
+
+      <TabBar tabs={["Company", "Team", "Notifications", "AI Preferences", "Security"]} active={activeTab} onChange={setActiveTab} />
+
+      {activeTab === "Company" && (
+        <>
+          <div style={S.card}>
+            <div style={S.cardHeader}>Company Profile</div>
+            <div className="grid-2col">
+              <div><label style={{ fontSize: 12, color: COLORS.textMuted, display: "block", marginBottom: 6 }}>Company Name</label><input style={S.input} defaultValue="SunPower Solar Solutions" /></div>
+              <div><label style={{ fontSize: 12, color: COLORS.textMuted, display: "block", marginBottom: 6 }}>Industry</label><select style={{ ...S.select, width: "100%" }}>{INDUSTRIES.map(i => <option key={i}>{i}</option>)}</select></div>
+              <div><label style={{ fontSize: 12, color: COLORS.textMuted, display: "block", marginBottom: 6 }}>Phone</label><input style={S.input} defaultValue="(555) 100-2000" /></div>
+              <div><label style={{ fontSize: 12, color: COLORS.textMuted, display: "block", marginBottom: 6 }}>Email</label><input style={S.input} defaultValue="info@sunpowersolar.com" /></div>
+              <div><label style={{ fontSize: 12, color: COLORS.textMuted, display: "block", marginBottom: 6 }}>Website</label><input style={S.input} defaultValue="https://sunpowersolar.com" /></div>
+              <div><label style={{ fontSize: 12, color: COLORS.textMuted, display: "block", marginBottom: 6 }}>Address</label><input style={S.input} defaultValue="123 Solar Ave, Austin, TX 78701" /></div>
+            </div>
+          </div>
+          <div style={S.card}>
+            <div style={S.cardHeader}>Branding</div>
+            <div className="grid-2col">
+              <div>
+                <label style={{ fontSize: 12, color: COLORS.textMuted, display: "block", marginBottom: 6 }}>Company Logo</label>
+                <div style={{ padding: 24, border: `2px dashed ${COLORS.border}`, borderRadius: 10, textAlign: "center", cursor: "pointer" }}>
+                  <div style={{ fontSize: 28, marginBottom: 8 }}>📷</div>
+                  <div style={{ fontSize: 12, color: COLORS.textMuted }}>Drop logo here or <span style={{ color: COLORS.orange }}>browse</span></div>
+                  <div style={{ fontSize: 11, color: COLORS.textDim, marginTop: 4 }}>PNG, JPG, SVG — Max 2MB</div>
+                </div>
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: COLORS.textMuted, display: "block", marginBottom: 6 }}>Brand Color</label>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 16 }}>
+                  <input type="color" defaultValue="#e67e22" style={{ width: 48, height: 40, border: "none", borderRadius: 6, cursor: "pointer" }} />
+                  <input style={S.input} defaultValue="#e67e22" />
+                </div>
+                <label style={{ fontSize: 12, color: COLORS.textMuted, display: "block", marginBottom: 6 }}>Timezone</label>
+                <select style={{ ...S.select, width: "100%" }}>
+                  <option>America/Chicago (CST)</option>
+                  <option>America/New_York (EST)</option>
+                  <option>America/Los_Angeles (PST)</option>
+                  <option>America/Denver (MST)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {activeTab === "Team" && (
+        <div style={S.card}>
+          <div style={S.cardHeader}><span>Team Members</span><span style={{ fontSize: 12, color: COLORS.textMuted }}>3 members</span></div>
+          <div className="table-responsive">
+          <table style={S.table}>
+            <thead><tr><th style={S.th}>Name</th><th style={S.th}>Email</th><th style={S.th}>Role</th><th style={S.th}>Status</th><th style={S.th}>Actions</th></tr></thead>
+            <tbody>
+              {[{ name: "John Owner", email: "john@sunpowersolar.com", role: "Admin" }, { name: "Mike Torres", email: "mike@sunpowersolar.com", role: "Sales Rep" }, { name: "Sarah Kim", email: "sarah@sunpowersolar.com", role: "Sales Rep" }].map((m, i) => (
+                <tr key={i}>
+                  <td style={S.td}><span style={{ fontWeight: 600 }}>{m.name}</span></td>
+                  <td style={S.td}>{m.email}</td>
+                  <td style={S.td}><span style={S.tag(m.role === "Admin" ? COLORS.orange : COLORS.blue)}>{m.role}</span></td>
+                  <td style={S.td}><span style={S.badge(COLORS.green)}>Active</span></td>
+                  <td style={S.td}><button style={{ ...S.btn("ghost"), padding: "5px 10px", fontSize: 11 }}>Edit</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          </div>
+          <button style={{ ...S.btn("primary"), marginTop: 16 }}>+ Invite Team Member</button>
+        </div>
+      )}
+
+      {activeTab === "Notifications" && (
+        <div style={S.card}>
+          <div style={S.cardHeader}>Notification Preferences</div>
+          <div style={{ display: "grid", gap: 16 }}>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>Lead Notifications</div>
+              <div style={{ display: "grid", gap: 10 }}>
+                <Toggle value={true} label="New lead created" />
+                <Toggle value={true} label="Lead score changed" />
+                <Toggle value={true} label="Lead replied to outreach" />
+                <Toggle value={false} label="Lead score decay warning" />
+              </div>
+            </div>
+            <div style={{ height: 1, background: COLORS.border }} />
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>Appointment Notifications</div>
+              <div style={{ display: "grid", gap: 10 }}>
+                <Toggle value={true} label="Appointment booked" />
+                <Toggle value={true} label="Appointment confirmed" />
+                <Toggle value={true} label="No-show detected" />
+                <Toggle value={true} label="24-hour reminder" />
+              </div>
+            </div>
+            <div style={{ height: 1, background: COLORS.border }} />
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>Campaign Notifications</div>
+              <div style={{ display: "grid", gap: 10 }}>
+                <Toggle value={true} label="Campaign completed" />
+                <Toggle value={false} label="Daily campaign performance digest" />
+                <Toggle value={true} label="Weekly summary email" />
+              </div>
+            </div>
+            <div style={{ height: 1, background: COLORS.border }} />
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>Delivery Method</div>
+              <div style={{ display: "grid", gap: 10 }}>
+                <Toggle value={true} label="In-app notifications" />
+                <Toggle value={true} label="Email notifications" />
+                <Toggle value={false} label="SMS notifications" />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === "AI Preferences" && (
+        <div style={S.card}>
+          <div style={S.cardHeader}>AI Learning & Behavior</div>
+          <div style={{ display: "grid", gap: 16 }}>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>Learning</div>
+              <div style={{ display: "grid", gap: 10 }}>
+                <Toggle value={true} label="Continuous learning from call outcomes" />
+                <Toggle value={true} label="Auto-improve talk tracks" />
+                <Toggle value={true} label="Industry-specific sales psychology" />
+                <Toggle value={true} label="Auto-suggest upsell opportunities" />
+              </div>
+            </div>
+            <div style={{ height: 1, background: COLORS.border }} />
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>Lead Scoring</div>
+              <div style={{ display: "grid", gap: 10 }}>
+                <Toggle value={true} label="Automatic lead score decay over time" />
+                <Toggle value={true} label="Market condition score boosting (utility rates, incentives)" />
+                <Toggle value={true} label="Auto-score new leads on creation" />
+              </div>
+            </div>
+            <div style={{ height: 1, background: COLORS.border }} />
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>Outreach Behavior</div>
+              <div style={{ display: "grid", gap: 10 }}>
+                <Toggle value={true} label="AI generates follow-up messages automatically" />
+                <Toggle value={true} label="Respect quiet hours (8am–9pm local time)" />
+                <Toggle value={true} label="TCPA compliance enforcement" />
+                <Toggle value={true} label="DNC list checking before outreach" />
+              </div>
+            </div>
+            <div style={{ height: 1, background: COLORS.border }} />
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>Model</div>
+              <div style={{ padding: 14, background: COLORS.surfaceAlt, borderRadius: 8, fontSize: 12, color: COLORS.textMuted }}>
+                Currently using <strong style={{ color: COLORS.orangeLight }}>Claude Sonnet 4</strong> (claude-sonnet-4-20250514) for lead scoring, message generation, and objection handling.
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === "Security" && (
+        <div style={S.card}>
+          <div style={S.cardHeader}>Security & Access</div>
+          <div style={{ display: "grid", gap: 16 }}>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>Authentication</div>
+              <div className="grid-2col">
+                <div><label style={{ fontSize: 12, color: COLORS.textMuted, display: "block", marginBottom: 6 }}>Session Duration</label>
+                  <select style={{ ...S.select, width: "100%" }}><option>7 days</option><option>1 day</option><option>30 days</option></select>
+                </div>
+                <div><label style={{ fontSize: 12, color: COLORS.textMuted, display: "block", marginBottom: 6 }}>Password Policy</label>
+                  <select style={{ ...S.select, width: "100%" }}><option>Strong (8+ chars, mixed)</option><option>Standard (6+ chars)</option></select>
+                </div>
+              </div>
+            </div>
+            <div style={{ height: 1, background: COLORS.border }} />
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>API Access</div>
+              <div style={{ padding: 14, background: COLORS.surfaceAlt, borderRadius: 8 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div><div style={{ fontSize: 13, fontWeight: 600 }}>API Key</div><div style={{ fontSize: 11, color: COLORS.textMuted }}>For external integrations and webhooks</div></div>
+                  <button style={S.btn("secondary")}>Generate Key</button>
+                </div>
+              </div>
+            </div>
+            <div style={{ height: 1, background: COLORS.border }} />
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>Data & Privacy</div>
+              <div style={{ display: "grid", gap: 10 }}>
+                <Toggle value={true} label="Encrypt lead data at rest" />
+                <Toggle value={true} label="Audit logging enabled" />
+                <Toggle value={true} label="Auto-redact PII from AI logs" />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1884,9 +2359,9 @@ function SandboxPage({ setPage }) {
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 20 }}>
+      <div className="grid-sandbox">
         {/* Chat panel */}
-        <div style={{ ...S.card, display: "flex", flexDirection: "column", height: "calc(100vh - 200px)", minHeight: 500 }}>
+        <div className="sandbox-chat" style={{ ...S.card, display: "flex", flexDirection: "column", height: "calc(100vh - 200px)", minHeight: 500 }}>
           {/* Messages */}
           <div style={{ flex: 1, overflowY: "auto", padding: "12px 0" }}>
             {messages.map((m, i) => (
@@ -2033,6 +2508,7 @@ export default function CatalystApp() {
   const [loggedIn, setLoggedIn] = useState(isAuthenticated());
   const [user, setUser] = useState(null);
   const [page, setPage] = useState("Dashboard");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
     if (isAuthenticated() && !user) {
@@ -2041,6 +2517,11 @@ export default function CatalystApp() {
   }, [loggedIn]);
 
   const handleLogout = () => { clearToken(); setLoggedIn(false); setUser(null); };
+
+  const navigateTo = (pageName) => {
+    setPage(pageName);
+    setSidebarOpen(false);
+  };
 
   if (!loggedIn) return <LoginPage onLogin={(u) => { setUser(u); setLoggedIn(true); }} />;
 
@@ -2064,44 +2545,40 @@ export default function CatalystApp() {
 
   const renderPage = () => {
     switch (page) {
-      case "Dashboard": return <DashboardPage setPage={setPage} />;
+      case "Dashboard": return <DashboardPage setPage={navigateTo} />;
       case "Leads": return <LeadsPage />;
       case "Campaigns": return <CampaignsPage />;
       case "Appointments": return <AppointmentsPage />;
       case "Conversation Replay": return <ConversationReplayPage />;
-      case "Sandbox": return <SandboxPage setPage={setPage} />;
+      case "Sandbox": return <SandboxPage setPage={navigateTo} />;
       case "Proposals & Sales": return <ProposalsPage />;
       case "Voice AI": return <VoiceAIPage />;
       case "Connect Your Tech": return <ConnectTechPage />;
       case "Billing": return <BillingPage />;
       case "Settings": return <SettingsPage />;
-      default: return <DashboardPage setPage={setPage} />;
+      default: return <DashboardPage setPage={navigateTo} />;
     }
   };
 
   return (
-    <div style={S.app}>
+    <div className="catalyst-app" style={S.app}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
-      <style>{`
-        @keyframes slideUp {
-          from { opacity: 0; transform: translateY(20px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes highlightPulse {
-          0% { background-color: rgba(39, 174, 96, 0.25); }
-          50% { background-color: rgba(39, 174, 96, 0.08); }
-          100% { background-color: transparent; }
-        }
-      `}</style>
-      <div style={S.sidebar}>
-        <div style={{ padding: "20px 20px 16px", borderBottom: `1px solid ${COLORS.border}` }}>
-          <Logo /><div style={{ fontSize: 10, color: COLORS.textDim, marginTop: 6, letterSpacing: 0.5 }}>THE REACTION STACK</div>
+
+      {/* Mobile sidebar overlay */}
+      <div className={`sidebar-overlay ${sidebarOpen ? "active" : ""}`} onClick={() => setSidebarOpen(false)} />
+
+      <div className={`catalyst-sidebar ${sidebarOpen ? "open" : ""}`} style={S.sidebar}>
+        <div style={{ padding: "20px 20px 16px", borderBottom: `1px solid ${COLORS.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div>
+            <Logo /><div style={{ fontSize: 10, color: COLORS.textDim, marginTop: 6, letterSpacing: 0.5 }}>THE REACTION STACK</div>
+          </div>
+          <button className="mobile-menu-btn sidebar-close-btn" onClick={() => setSidebarOpen(false)} style={{ color: COLORS.textMuted }}>✕</button>
         </div>
         <div style={S.sidebarNav}>
           {navItems.map((item, i) => {
             if (item.section) return <div key={i} style={S.navSection}>{item.section}</div>;
             return (
-              <div key={i} style={S.navItem(page === item.name)} onClick={() => setPage(item.name)}>
+              <div key={i} style={S.navItem(page === item.name)} onClick={() => navigateTo(item.name)}>
                 <span>{item.icon}</span><span style={{ flex: 1 }}>{item.name}</span>
                 {item.badge && <span style={{ fontSize: 9, padding: "2px 6px", borderRadius: 4, background: COLORS.purple, color: "#fff", fontWeight: 700 }}>{item.badge}</span>}
                 {item.sub && <span style={{ fontSize: 10, color: COLORS.textDim }}>{item.sub}</span>}
@@ -2109,22 +2586,25 @@ export default function CatalystApp() {
             );
           })}
         </div>
-        <div style={{ padding: "16px 20px", borderTop: `1px solid ${COLORS.border}`, display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ width: 32, height: 32, borderRadius: 8, background: `linear-gradient(135deg, ${COLORS.orange}, ${COLORS.orangeDark})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 700, color: "#fff" }}>{(user?.firstName || "U")[0]}</div>
-          <div style={{ flex: 1 }}><div style={{ fontSize: 12, fontWeight: 600 }}>{user ? `${user.firstName} ${user.lastName}` : "User"}</div><div style={{ fontSize: 10, color: COLORS.textMuted }}>{user?.email || "Growth Plan"}</div></div>
-          <button style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer", fontSize: 16 }} onClick={handleLogout}>⏻</button>
+        <div className="sidebar-user" style={{ padding: "16px 20px", borderTop: `1px solid ${COLORS.border}`, display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ width: 32, height: 32, borderRadius: 8, background: `linear-gradient(135deg, ${COLORS.orange}, ${COLORS.orangeDark})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 700, color: "#fff", flexShrink: 0 }}>{(user?.firstName || "U")[0]}</div>
+          <div className="sidebar-user-info" style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 12, fontWeight: 600 }}>{user ? `${user.firstName} ${user.lastName}` : "User"}</div><div style={{ fontSize: 10, color: COLORS.textMuted }}>{user?.email || "Growth Plan"}</div></div>
+          <button style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer", fontSize: 16, flexShrink: 0 }} onClick={handleLogout} title="Sign out">⏻</button>
         </div>
       </div>
-      <div style={S.main}>
-        <div style={S.topbar}>
-          <span style={{ fontSize: 17, fontWeight: 700 }}>{page}</span>
-          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-            <ComplianceBadge />
+      <div className="catalyst-main" style={S.main}>
+        <div className="catalyst-topbar" style={S.topbar}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <button className="mobile-menu-btn" onClick={() => setSidebarOpen(true)}>☰</button>
+            <span style={{ fontSize: 17, fontWeight: 700 }}>{page}</span>
+          </div>
+          <div className="topbar-right">
+            <span className="compliance-badge-topbar"><ComplianceBadge /></span>
             <div style={{ position: "relative" }}><span style={{ cursor: "pointer", fontSize: 18 }}>🔔</span><span style={{ position: "absolute", top: -4, right: -4, width: 14, height: 14, borderRadius: 7, background: COLORS.red, fontSize: 9, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700 }}>5</span></div>
-            <input style={{ ...S.input, maxWidth: 200, padding: "8px 14px" }} placeholder="Search..." />
+            <input className="topbar-search" style={{ ...S.input, maxWidth: 200, padding: "8px 14px" }} placeholder="Search..." />
           </div>
         </div>
-        <div style={S.content}>{renderPage()}</div>
+        <div className="catalyst-content" style={S.content}>{renderPage()}</div>
       </div>
     </div>
   );
