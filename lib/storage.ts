@@ -286,6 +286,10 @@ export const storage = {
     return appt;
   },
 
+  async deleteAppointment(id: number) {
+    await db.delete(appointments).where(eq(appointments.id, id));
+  },
+
   // ─── CAMPAIGNS (org-scoped) ───────────────────────────────────────────
 
   async getCampaigns(organizationId?: number | null) {
@@ -365,6 +369,10 @@ export const storage = {
       .where(eq(proposals.id, id))
       .returning();
     return proposal;
+  },
+
+  async deleteProposal(id: number) {
+    await db.delete(proposals).where(eq(proposals.id, id));
   },
 
   // ─── ACTIVITY LOGS (org-scoped) ───────────────────────────────────────

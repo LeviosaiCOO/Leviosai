@@ -592,7 +592,7 @@ function DashboardPage({ setPage }) {
         <div style={S.card}>
           <div style={S.cardHeader}>Outreach Channels</div>
           <ResponsiveContainer width="100%" height={180}>
-            <PieChart><Pie data={channelData} cx="50%" cy="50%" innerRadius={50} outerRadius={75} paddingAngle={3} dataKey="value">{channelData.map((_, i) => <Cell key={i} fill={channelColors[i]} />)}</Pie><Tooltip contentStyle={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 8, fontSize: 12 }} /></PieChart>
+            <PieChart><Pie data={channelData} cx="50%" cy="50%" innerRadius={50} outerRadius={75} paddingAngle={3} dataKey="value">{channelData.map((_, i) => <Cell key={i} fill={channelColors[i]} />)}</Pie><Tooltip contentStyle={{ background: "#1e1e1e", border: `1px solid ${COLORS.border}`, borderRadius: 8, fontSize: 12, color: COLORS.text }} itemStyle={{ color: COLORS.text }} /></PieChart>
           </ResponsiveContainer>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 10, justifyContent: "center" }}>
             {channelData.map((d, i) => (
@@ -664,6 +664,10 @@ function LeadsPage() {
   const [filter, setFilter] = useState("All");
   const [search, setSearch] = useState("");
   const [showUpload, setShowUpload] = useState(false);
+  const [showAddLead, setShowAddLead] = useState(false);
+  const [addLeadForm, setAddLeadForm] = useState({ firstName: "", lastName: "", email: "", phone: "", source: "" });
+  const [addLeadError, setAddLeadError] = useState(null);
+  const [addLeadSaving, setAddLeadSaving] = useState(false);
   const [selectedLead, setSelectedLead] = useState(null);
   const [showReplay, setShowReplay] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -713,7 +717,7 @@ function LeadsPage() {
         </div>
         <div className="page-header-actions">
           <button style={S.btn("secondary")} onClick={() => setShowUpload(true)}>📤 Import Leads</button>
-          <button style={S.btn("primary")}>+ Add Lead</button>
+          <button style={S.btn("primary")} onClick={() => { setAddLeadForm({ firstName: "", lastName: "", email: "", phone: "", source: "" }); setAddLeadError(null); setShowAddLead(true); }}>+ Add Lead</button>
         </div>
       </div>
 
@@ -826,6 +830,71 @@ function LeadsPage() {
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20 }}>
               <button style={S.btn("ghost")} onClick={() => setShowUpload(false)}>Cancel</button>
               <button style={S.btn("primary")}>Upload & Process</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Lead Modal */}
+      {showAddLead && (
+        <div style={S.modal} onClick={() => setShowAddLead(false)}>
+          <div style={S.modalContent} onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>Add New Lead</h3>
+            <p style={{ color: COLORS.textMuted, fontSize: 13, marginBottom: 20 }}>Manually add a lead to your pipeline.</p>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+              <div>
+                <label style={{ fontSize: 12, color: COLORS.textMuted, display: "block", marginBottom: 4 }}>First Name *</label>
+                <input style={S.input} placeholder="Jane" value={addLeadForm.firstName} onChange={(e) => setAddLeadForm(f => ({ ...f, firstName: e.target.value }))} />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: COLORS.textMuted, display: "block", marginBottom: 4 }}>Last Name *</label>
+                <input style={S.input} placeholder="Smith" value={addLeadForm.lastName} onChange={(e) => setAddLeadForm(f => ({ ...f, lastName: e.target.value }))} />
+              </div>
+            </div>
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ fontSize: 12, color: COLORS.textMuted, display: "block", marginBottom: 4 }}>Email *</label>
+              <input style={S.input} type="email" placeholder="jane@example.com" value={addLeadForm.email} onChange={(e) => setAddLeadForm(f => ({ ...f, email: e.target.value }))} />
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+              <div>
+                <label style={{ fontSize: 12, color: COLORS.textMuted, display: "block", marginBottom: 4 }}>Phone</label>
+                <input style={S.input} placeholder="+1 (555) 000-0000" value={addLeadForm.phone} onChange={(e) => setAddLeadForm(f => ({ ...f, phone: e.target.value }))} />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: COLORS.textMuted, display: "block", marginBottom: 4 }}>Source</label>
+                <select style={{ ...S.select, width: "100%" }} value={addLeadForm.source} onChange={(e) => setAddLeadForm(f => ({ ...f, source: e.target.value }))}>
+                  <option value="">Select source…</option>
+                  <option value="Manual Entry">Manual Entry</option>
+                  <option value="Website">Website</option>
+                  <option value="Referral">Referral</option>
+                  <option value="Cold Call">Cold Call</option>
+                  <option value="Facebook Ad">Facebook Ad</option>
+                  <option value="Google Ad">Google Ad</option>
+                  <option value="CSV Import">CSV Import</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+            </div>
+            {addLeadError && <div style={{ padding: "10px 14px", borderRadius: 8, background: `${COLORS.red}15`, border: `1px solid ${COLORS.red}44`, color: COLORS.red, fontSize: 13, marginBottom: 14 }}>{addLeadError}</div>}
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20 }}>
+              <button style={S.btn("ghost")} onClick={() => setShowAddLead(false)}>Cancel</button>
+              <button style={S.btn("primary")} disabled={addLeadSaving} onClick={async () => {
+                if (!addLeadForm.firstName.trim() || !addLeadForm.lastName.trim() || !addLeadForm.email.trim()) {
+                  setAddLeadError("First name, last name, and email are required.");
+                  return;
+                }
+                setAddLeadSaving(true);
+                setAddLeadError(null);
+                try {
+                  await leadsApi.create({ ...addLeadForm, status: "new" });
+                  setShowAddLead(false);
+                  fetchLeads();
+                } catch (err) {
+                  setAddLeadError(err.message || "Failed to add lead.");
+                } finally {
+                  setAddLeadSaving(false);
+                }
+              }}>{addLeadSaving ? "Saving…" : "Add Lead"}</button>
             </div>
           </div>
         </div>
@@ -1056,6 +1125,16 @@ function AppointmentsPage() {
     setAppointments(prev => prev.map(a => a.id === id ? { ...a, showed, creditApplied: !showed, status: "Completed" } : a));
   };
 
+  const deleteAppointment = async (id) => {
+    if (!window.confirm("Delete this appointment?")) return;
+    try {
+      await appointmentsApi.delete(id);
+      setAppointments(prev => prev.filter(a => a.id !== id));
+    } catch (err) {
+      alert("Failed to delete: " + err.message);
+    }
+  };
+
   const noShows = appointments.filter(a => a.showed === false);
   const totalCredits = noShows.length * 200;
 
@@ -1097,7 +1176,7 @@ function AppointmentsPage() {
         <div className="table-responsive">
         <table style={S.table}>
           <thead><tr>
-            <th style={S.th}>Lead</th><th style={S.th}>Date & Time</th><th style={S.th} className="hide-mobile">Type</th><th style={S.th} className="hide-mobile">Rep</th><th style={S.th} className="hide-mobile">Product</th><th style={S.th}>Status</th><th style={S.th}>Showed?</th><th style={S.th}>Credit</th>
+            <th style={S.th}>Lead</th><th style={S.th}>Date & Time</th><th style={S.th} className="hide-mobile">Type</th><th style={S.th} className="hide-mobile">Rep</th><th style={S.th} className="hide-mobile">Product</th><th style={S.th}>Status</th><th style={S.th}>Showed?</th><th style={S.th}>Credit</th><th style={S.th}></th>
           </tr></thead>
           <tbody>
             {appointments.map((a) => (
@@ -1123,6 +1202,9 @@ function AppointmentsPage() {
                 </td>
                 <td style={S.td}>
                   {a.creditApplied ? <span style={S.badge(COLORS.teal)}>$200 Credit</span> : <span style={{ color: COLORS.textDim }}>—</span>}
+                </td>
+                <td style={S.td}>
+                  <button style={{ ...S.btn("danger"), padding: "4px 10px", fontSize: 11 }} onClick={() => deleteAppointment(a.id)}>✕</button>
                 </td>
               </tr>
             ))}
@@ -1183,18 +1265,47 @@ function AppointmentsPage() {
 // PROPOSALS — with Feature 4 (White-Label)
 // ============================================================
 function ProposalsPage() {
-  const [unlocked, setUnlocked] = useState(true);
+  const [proposals, setProposals] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [selectedProposal, setSelectedProposal] = useState(null);
   const [whiteLabel, setWhiteLabel] = useState({ companyName: "SunPower Solar Solutions", primaryColor: "#e67e22", logoUploaded: true });
+  const [showNewProposal, setShowNewProposal] = useState(false);
+  const [newProposalForm, setNewProposalForm] = useState({ leadId: "", title: "", amount: "" });
+  const [newProposalError, setNewProposalError] = useState(null);
+  const [newProposalSaving, setNewProposalSaving] = useState(false);
+  const [leads, setLeads] = useState([]);
 
-  if (!unlocked) return (
-    <div style={{ textAlign: "center", padding: "80px 20px" }}>
-      <div style={{ fontSize: 48, marginBottom: 16 }}>🔒</div>
-      <h2 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8 }}>Automated Sales & Proposals</h2>
-      <p style={{ color: COLORS.textMuted, fontSize: 14, maxWidth: 500, margin: "0 auto 24px", lineHeight: 1.6 }}>Unlock AI-powered proposal generation, multi-option financing, and automated deal closing — a feature no other platform offers.</p>
-      <button style={S.btn("primary")} onClick={() => setUnlocked(true)}>Unlock Feature — Contact Sales</button>
-    </div>
-  );
+  const fetchProposals = useCallback(() => {
+    setLoading(true);
+    proposalsApi.list().then(setProposals).catch(console.error).finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    fetchProposals();
+    leadsApi.list().then(setLeads).catch(console.error);
+  }, [fetchProposals]);
+
+  const deleteProposal = async (id) => {
+    if (!window.confirm("Delete this proposal?")) return;
+    try {
+      await proposalsApi.delete(id);
+      setProposals(prev => prev.filter(p => p.id !== id));
+    } catch (err) {
+      alert("Failed to delete: " + err.message);
+    }
+  };
+
+  const closeProposal = async (p) => {
+    try {
+      const updated = await proposalsApi.update(p.id, { status: "accepted" });
+      setProposals(prev => prev.map(x => x.id === p.id ? { ...x, status: "accepted" } : x));
+    } catch (err) {
+      alert("Failed to update: " + err.message);
+    }
+  };
+
+  const statusColor = (s) => s === "accepted" ? COLORS.green : s === "viewed" ? COLORS.blue : s === "sent" ? COLORS.orange : COLORS.textMuted;
+  const statusLabel = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : "Draft";
 
   return (
     <div>
@@ -1202,41 +1313,53 @@ function ProposalsPage() {
         <div><h2 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Proposals & Sales</h2><p style={{ color: COLORS.textMuted, fontSize: 13, margin: "4px 0 0" }}>AI-powered proposals with white-label branding</p></div>
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
           <span style={S.badge(COLORS.purple)}>✨ Premium Feature</span>
-          <button style={S.btn("primary")}>+ New Proposal</button>
+          <button style={S.btn("primary")} onClick={() => { setNewProposalForm({ leadId: "", title: "", amount: "" }); setNewProposalError(null); setShowNewProposal(true); }}>+ New Proposal</button>
         </div>
       </div>
 
       <div className="grid-stats" style={{ marginBottom: 24 }}>
-        <StatCard label="Proposals Sent" value="18" color={COLORS.orange} icon="📝" />
-        <StatCard label="Viewed" value="14" color={COLORS.blue} icon="👁️" />
-        <StatCard label="Accepted" value="8" color={COLORS.green} icon="✅" />
-        <StatCard label="Revenue Closed" value="$186K" color={COLORS.purple} icon="💰" />
+        <StatCard label="Proposals Sent" value={proposals.length} color={COLORS.orange} icon="📝" />
+        <StatCard label="Viewed" value={proposals.filter(p => p.status === "viewed").length} color={COLORS.blue} icon="👁️" />
+        <StatCard label="Accepted" value={proposals.filter(p => p.status === "accepted").length} color={COLORS.green} icon="✅" />
+        <StatCard label="Revenue Closed" value={`$${Math.round(proposals.filter(p => p.status === "accepted").reduce((s, p) => s + (p.amount || 0), 0) / 1000)}K`} color={COLORS.purple} icon="💰" />
       </div>
 
       <div style={S.card}>
         <div style={S.cardHeader}>Active Proposals</div>
+        {loading ? <LoadingState message="Loading proposals..." /> : proposals.length === 0 ? (
+          <EmptyState icon="📝" title="No proposals yet" description="Create your first proposal to get started." action="+ New Proposal" onAction={() => { setNewProposalForm({ leadId: "", title: "", amount: "" }); setNewProposalError(null); setShowNewProposal(true); }} />
+        ) : (
         <div className="table-responsive">
         <table style={S.table}>
-          <thead><tr><th style={S.th}>ID</th><th style={S.th}>Customer</th><th style={S.th}>System</th><th style={S.th}>Cash</th><th style={S.th} className="hide-mobile">Loan/mo</th><th style={S.th} className="hide-mobile">Lease/mo</th><th style={S.th}>Status</th><th style={S.th}>Actions</th></tr></thead>
+          <thead><tr><th style={S.th}>#</th><th style={S.th}>Customer</th><th style={S.th}>Title / System</th><th style={S.th}>Amount</th><th style={S.th} className="hide-mobile">Loan Est./mo</th><th style={S.th} className="hide-mobile">Lease Est./mo</th><th style={S.th}>Status</th><th style={S.th}>Actions</th></tr></thead>
           <tbody>
-            {SAMPLE_PROPOSALS.map((p) => (
-              <tr key={p.id}>
-                <td style={S.td}><span style={{ fontWeight: 600, color: COLORS.orange }}>{p.id}</span></td>
-                <td style={S.td}><span style={{ fontWeight: 600 }}>{p.customer}</span></td>
-                <td style={S.td}>{p.system}</td>
-                <td style={S.td}>${p.cashPrice.toLocaleString()}</td>
-                <td style={S.td} className="hide-mobile">${p.loanPayment}/mo</td>
-                <td style={S.td} className="hide-mobile">${p.leasePayment}/mo</td>
-                <td style={S.td}><span style={S.badge(p.status === "Viewed" ? COLORS.blue : COLORS.yellow)}>{p.status}</span></td>
-                <td style={S.td}><div style={{ display: "flex", gap: 6 }}>
-                  <button style={{ ...S.btn("ghost"), padding: "5px 10px", fontSize: 11 }} onClick={() => setSelectedProposal(p)}>View</button>
-                  <button style={{ ...S.btn("primary"), padding: "5px 10px", fontSize: 11 }}>Close Deal</button>
-                </div></td>
-              </tr>
-            ))}
+            {proposals.map((p) => {
+              const cashPrice = p.amount || 0;
+              const loanPayment = cashPrice ? Math.round(cashPrice / 150) : "—";
+              const leasePayment = cashPrice ? Math.round(cashPrice / 220) : "—";
+              const customer = `${p.leadFirstName || ""} ${p.leadLastName || ""}`.trim() || "—";
+              const viewableProposal = { id: `P${String(p.id).padStart(3, "0")}`, customer, system: p.title, cashPrice, loanPayment, leasePayment, status: statusLabel(p.status), created: new Date(p.createdAt).toISOString().split("T")[0] };
+              return (
+                <tr key={p.id}>
+                  <td style={S.td}><span style={{ fontWeight: 600, color: COLORS.orange }}>P{String(p.id).padStart(3, "0")}</span></td>
+                  <td style={S.td}><span style={{ fontWeight: 600 }}>{customer}</span></td>
+                  <td style={S.td}>{p.title}</td>
+                  <td style={S.td}>${cashPrice.toLocaleString()}</td>
+                  <td style={S.td} className="hide-mobile">{loanPayment !== "—" ? `$${loanPayment}/mo` : "—"}</td>
+                  <td style={S.td} className="hide-mobile">{leasePayment !== "—" ? `$${leasePayment}/mo` : "—"}</td>
+                  <td style={S.td}><span style={S.badge(statusColor(p.status))}>{statusLabel(p.status)}</span></td>
+                  <td style={S.td}><div style={{ display: "flex", gap: 6 }}>
+                    <button style={{ ...S.btn("ghost"), padding: "5px 10px", fontSize: 11 }} onClick={() => setSelectedProposal(viewableProposal)}>View</button>
+                    {p.status !== "accepted" && <button style={{ ...S.btn("primary"), padding: "5px 10px", fontSize: 11 }} onClick={() => closeProposal(p)}>Close Deal</button>}
+                    <button style={{ ...S.btn("danger"), padding: "5px 10px", fontSize: 11 }} onClick={() => deleteProposal(p.id)}>✕</button>
+                  </div></td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
         </div>
+        )}
       </div>
 
       {/* FEATURE 4: White-Label Branding Config */}
@@ -1301,6 +1424,52 @@ function ProposalsPage() {
           </div>
         </div>
       </div>
+
+      {/* New Proposal Modal */}
+      {showNewProposal && (
+        <div style={S.modal} onClick={() => setShowNewProposal(false)}>
+          <div style={S.modalContent} onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>New Proposal</h3>
+            <p style={{ color: COLORS.textMuted, fontSize: 13, marginBottom: 20 }}>Create a proposal for a lead.</p>
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ fontSize: 12, color: COLORS.textMuted, display: "block", marginBottom: 4 }}>Customer (Lead) *</label>
+              <select style={{ ...S.select, width: "100%" }} value={newProposalForm.leadId} onChange={(e) => setNewProposalForm(f => ({ ...f, leadId: e.target.value }))}>
+                <option value="">Select a lead…</option>
+                {leads.map(l => <option key={l.id} value={l.id}>{l.name || `${l.firstName} ${l.lastName}`}</option>)}
+              </select>
+            </div>
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ fontSize: 12, color: COLORS.textMuted, display: "block", marginBottom: 4 }}>System / Title *</label>
+              <input style={S.input} placeholder="e.g. 8.4kW Solar + Battery" value={newProposalForm.title} onChange={(e) => setNewProposalForm(f => ({ ...f, title: e.target.value }))} />
+            </div>
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ fontSize: 12, color: COLORS.textMuted, display: "block", marginBottom: 4 }}>Cash Price ($)</label>
+              <input style={S.input} type="number" placeholder="28500" value={newProposalForm.amount} onChange={(e) => setNewProposalForm(f => ({ ...f, amount: e.target.value }))} />
+            </div>
+            {newProposalError && <div style={{ padding: "10px 14px", borderRadius: 8, background: `${COLORS.red}15`, border: `1px solid ${COLORS.red}44`, color: COLORS.red, fontSize: 13, marginBottom: 14 }}>{newProposalError}</div>}
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20 }}>
+              <button style={S.btn("ghost")} onClick={() => setShowNewProposal(false)}>Cancel</button>
+              <button style={S.btn("primary")} disabled={newProposalSaving} onClick={async () => {
+                if (!newProposalForm.leadId || !newProposalForm.title.trim()) {
+                  setNewProposalError("Customer and title are required.");
+                  return;
+                }
+                setNewProposalSaving(true);
+                setNewProposalError(null);
+                try {
+                  await proposalsApi.create({ leadId: parseInt(newProposalForm.leadId), title: newProposalForm.title, amount: newProposalForm.amount ? parseInt(newProposalForm.amount) : null, status: "sent" });
+                  setShowNewProposal(false);
+                  fetchProposals();
+                } catch (err) {
+                  setNewProposalError(err.message || "Failed to create proposal.");
+                } finally {
+                  setNewProposalSaving(false);
+                }
+              }}>{newProposalSaving ? "Creating…" : "Create Proposal"}</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* FEATURE 4: White-Labeled Proposal Viewer */}
       {selectedProposal && (

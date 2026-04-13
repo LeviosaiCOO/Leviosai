@@ -1,15 +1,71 @@
-// ─── IN-MEMORY PRIORITY QUEUE ───────────────────────────────────────────────
-// Min-heap keyed on (priority, createdAt). Swappable for Upstash Redis later.
+// ─── PRIORITY QUEUE ──────────────────────────────────────────────────────────
+// In-memory min-heap by default. Swaps to Redis sorted-set when REDIS_URL set.
 
 import type { ReactorEvent } from "./types.js";
+import { redis } from "../lib/redis.js";
+
+const REDIS_KEY = "reactor:queue";
 
 export interface IPriorityQueue {
-  enqueue(event: ReactorEvent): void;
-  dequeue(): ReactorEvent | null;
-  peek(): ReactorEvent | null;
-  size(): number;
-  drain(): ReactorEvent[];
+  enqueue(event: ReactorEvent): Promise<void> | void;
+  dequeue(): Promise<ReactorEvent | null> | ReactorEvent | null;
+  peek(): Promise<ReactorEvent | null> | ReactorEvent | null;
+  size(): Promise<number> | number;
+  drain(): Promise<ReactorEvent[]> | ReactorEvent[];
 }
+
+// ─── Redis-backed sorted-set queue ──────────────────────────────────────────
+
+export class RedisPriorityQueue implements IPriorityQueue {
+  async enqueue(event: ReactorEvent): Promise<void> {
+    // Score = priority * 1e13 + createdAt ms — lower score = higher urgency
+    const score = event.metadata.priority * 1e13 + event.metadata.createdAt.getTime();
+    await redis!.zadd(REDIS_KEY, score, JSON.stringify(event));
+  }
+
+  async dequeue(): Promise<ReactorEvent | null> {
+    // Atomically pop the lowest-score member
+    const result = await redis!.zpopmin(REDIS_KEY, 1);
+    if (!result || result.length < 2) return null;
+    try {
+      const raw = result[0] as string;
+      const parsed = JSON.parse(raw);
+      // Restore Date objects
+      parsed.metadata.createdAt = new Date(parsed.metadata.createdAt);
+      return parsed as ReactorEvent;
+    } catch {
+      return null;
+    }
+  }
+
+  async peek(): Promise<ReactorEvent | null> {
+    const result = await redis!.zrange(REDIS_KEY, 0, 0);
+    if (!result || result.length === 0) return null;
+    try {
+      const parsed = JSON.parse(result[0]);
+      parsed.metadata.createdAt = new Date(parsed.metadata.createdAt);
+      return parsed as ReactorEvent;
+    } catch {
+      return null;
+    }
+  }
+
+  async size(): Promise<number> {
+    return redis!.zcard(REDIS_KEY);
+  }
+
+  async drain(): Promise<ReactorEvent[]> {
+    const members = await redis!.zrange(REDIS_KEY, 0, -1);
+    if (members.length > 0) await redis!.del(REDIS_KEY);
+    return members.map((m) => {
+      const p = JSON.parse(m);
+      p.metadata.createdAt = new Date(p.metadata.createdAt);
+      return p as ReactorEvent;
+    });
+  }
+}
+
+// ─── In-memory min-heap fallback ─────────────────────────────────────────────
 
 export class InMemoryPriorityQueue implements IPriorityQueue {
   private heap: ReactorEvent[] = [];
@@ -40,20 +96,12 @@ export class InMemoryPriorityQueue implements IPriorityQueue {
 
   drain(): ReactorEvent[] {
     const events: ReactorEvent[] = [];
-    while (this.heap.length > 0) {
-      events.push(this.dequeue()!);
-    }
+    while (this.heap.length > 0) events.push(this.dequeue()!);
     return events;
   }
 
-  // ─── Heap internals ─────────────────────────────────────────────────
-
   private _compare(a: ReactorEvent, b: ReactorEvent): number {
-    // Lower priority number = higher urgency
-    if (a.metadata.priority !== b.metadata.priority) {
-      return a.metadata.priority - b.metadata.priority;
-    }
-    // Same priority: FIFO by createdAt
+    if (a.metadata.priority !== b.metadata.priority) return a.metadata.priority - b.metadata.priority;
     return a.metadata.createdAt.getTime() - b.metadata.createdAt.getTime();
   }
 
@@ -63,9 +111,7 @@ export class InMemoryPriorityQueue implements IPriorityQueue {
       if (this._compare(this.heap[idx], this.heap[parentIdx]) < 0) {
         [this.heap[idx], this.heap[parentIdx]] = [this.heap[parentIdx], this.heap[idx]];
         idx = parentIdx;
-      } else {
-        break;
-      }
+      } else break;
     }
   }
 
@@ -75,19 +121,22 @@ export class InMemoryPriorityQueue implements IPriorityQueue {
       let smallest = idx;
       const left = 2 * idx + 1;
       const right = 2 * idx + 2;
-
-      if (left < length && this._compare(this.heap[left], this.heap[smallest]) < 0) {
-        smallest = left;
-      }
-      if (right < length && this._compare(this.heap[right], this.heap[smallest]) < 0) {
-        smallest = right;
-      }
+      if (left < length && this._compare(this.heap[left], this.heap[smallest]) < 0) smallest = left;
+      if (right < length && this._compare(this.heap[right], this.heap[smallest]) < 0) smallest = right;
       if (smallest !== idx) {
         [this.heap[idx], this.heap[smallest]] = [this.heap[smallest], this.heap[idx]];
         idx = smallest;
-      } else {
-        break;
-      }
+      } else break;
     }
   }
+}
+
+// Export the right implementation based on whether Redis is available
+export function createQueue(): IPriorityQueue {
+  if (redis) {
+    console.log("⚡ Reactor queue: Redis (Upstash)");
+    return new RedisPriorityQueue();
+  }
+  console.log("⚡ Reactor queue: in-memory");
+  return new InMemoryPriorityQueue();
 }

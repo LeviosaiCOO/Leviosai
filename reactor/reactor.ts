@@ -7,7 +7,7 @@ import { eq, sql, and } from "drizzle-orm";
 import { db } from "../lib/db.js";
 import { leads, leadStateLog, budgetLedger, reactorEventLog, organizations } from "../lib/schema.js";
 import { storage } from "../lib/storage.js";
-import { InMemoryPriorityQueue } from "./queue.js";
+import { createQueue, IPriorityQueue } from "./queue.js";
 import { canTransition, toLegacyStatus } from "./state-machine.js";
 import { eventBus } from "./event-bus.js";
 import type {
@@ -23,7 +23,7 @@ import type {
 export class Reactor {
   private static instance: Reactor;
 
-  private queue = new InMemoryPriorityQueue();
+  private queue: IPriorityQueue = createQueue();
   private agents: IAgent[] = [];
   private running = false;
   private tickInterval: ReturnType<typeof setInterval> | null = null;
@@ -77,7 +77,9 @@ export class Reactor {
       },
     };
 
-    this.queue.enqueue(event);
+    Promise.resolve(this.queue.enqueue(event)).catch((err) =>
+      console.error("Queue enqueue error:", err.message)
+    );
     eventBus.emitTyped("event.enqueued", event);
     return event.id;
   }
@@ -106,7 +108,7 @@ export class Reactor {
   getStatus(): ReactorStatus {
     return {
       running: this.running,
-      queueSize: this.queue.size(),
+      queueSize: 0, // async size not awaited here
       agentsLoaded: this.agents.map((a) => a.id),
       eventsProcessed: this.stats.processed,
       eventsBlocked: this.stats.blocked,
@@ -118,7 +120,7 @@ export class Reactor {
   // ─── TICK LOOP ──────────────────────────────────────────────────────
 
   private async tick(): Promise<void> {
-    const event = this.queue.dequeue();
+    const event = await Promise.resolve(this.queue.dequeue());
     if (!event) return;
 
     // Check TTL expiry

@@ -1,38 +1,51 @@
 import rateLimit from "express-rate-limit";
+import { RedisStore } from "rate-limit-redis";
+import { redis } from "./redis.js";
+
+function makeStore(prefix: string) {
+  if (!redis) return undefined;
+  return new RedisStore({
+    sendCommand: (...args: string[]) => redis!.call(...args) as any,
+    prefix: `rl:${prefix}:`,
+  });
+}
 
 // Strict limiter for auth endpoints (login, register)
-// Prevents brute-force attacks
 export const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10, // 10 attempts per window
+  windowMs: 15 * 60 * 1000,
+  max: 10,
   message: { error: "Too many authentication attempts. Please try again in 15 minutes." },
   standardHeaders: true,
   legacyHeaders: false,
+  store: makeStore("auth"),
 });
 
-// General API limiter — generous but prevents abuse
+// General API limiter
 export const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 200, // 200 requests per window
+  windowMs: 15 * 60 * 1000,
+  max: 200,
   message: { error: "Too many requests. Please slow down." },
   standardHeaders: true,
   legacyHeaders: false,
+  store: makeStore("api"),
 });
 
-// AI endpoints — more restrictive (Claude API costs money)
+// AI endpoints
 export const aiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 30, // 30 AI requests per window
+  windowMs: 15 * 60 * 1000,
+  max: 30,
   message: { error: "Too many AI requests. Please try again shortly." },
   standardHeaders: true,
   legacyHeaders: false,
+  store: makeStore("ai"),
 });
 
-// Messaging endpoints — prevent SMS/email spam
+// Messaging endpoints
 export const messagingLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 50, // 50 messages per window
+  windowMs: 15 * 60 * 1000,
+  max: 50,
   message: { error: "Too many messages sent. Please try again shortly." },
   standardHeaders: true,
   legacyHeaders: false,
+  store: makeStore("messaging"),
 });

@@ -80,6 +80,7 @@ export const appointmentsApi = {
   },
   create: (data) => request("/api/appointments", { method: "POST", body: JSON.stringify(data) }),
   update: (id, data) => request(`/api/appointments/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  delete: (id) => request(`/api/appointments/${id}`, { method: "DELETE" }),
 };
 
 // Campaigns
@@ -94,6 +95,7 @@ export const proposalsApi = {
   list: (leadId) => request(`/api/proposals${leadId ? `?leadId=${leadId}` : ""}`),
   create: (data) => request("/api/proposals", { method: "POST", body: JSON.stringify(data) }),
   update: (id, data) => request(`/api/proposals/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  delete: (id) => request(`/api/proposals/${id}`, { method: "DELETE" }),
 };
 
 // Messages

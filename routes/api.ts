@@ -232,6 +232,15 @@ router.patch("/api/appointments/:id", requireAuth, async (req, res) => {
   }
 });
 
+router.delete("/api/appointments/:id", requireAuth, async (req, res) => {
+  try {
+    await storage.deleteAppointment(parseInt(req.params.id));
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ─── CAMPAIGNS ──────────────────────────────────────────────────────────────
 
 router.get("/api/campaigns", requireAuth, async (req, res) => {
@@ -309,6 +318,15 @@ router.patch("/api/proposals/:id", requireAuth, async (req, res) => {
     res.json(proposal);
   } catch (error: any) {
     res.status(400).json({ error: error.message });
+  }
+});
+
+router.delete("/api/proposals/:id", requireAuth, async (req, res) => {
+  try {
+    await storage.deleteProposal(parseInt(req.params.id));
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });
 
