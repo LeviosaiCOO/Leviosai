@@ -3,13 +3,10 @@ import { RedisStore } from "rate-limit-redis";
 import { redis, isRedisReady } from "./redis.js";
 
 function makeStore(prefix: string) {
-  if (!redis) return undefined;
+  if (!redis || !isRedisReady()) return undefined;
   try {
     return new RedisStore({
-      sendCommand: (...args: string[]) => {
-        if (!isRedisReady()) throw new Error("Redis unavailable");
-        return redis!.call(...args) as any;
-      },
+      sendCommand: (...args: string[]) => redis!.call(...args) as any,
       prefix: `rl:${prefix}:`,
     });
   } catch {
