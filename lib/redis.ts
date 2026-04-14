@@ -28,7 +28,11 @@ if (redisUrl) {
     redis.on("ready", () => { redisReady = true; });
     redis.on("error", (err) => {
       redisReady = false;
-      console.error("⚠️  Redis error:", err.message);
+      if (err.message?.includes("max requests limit exceeded")) {
+        console.error("⚠️  Upstash request limit reached — disabling Redis, falling back to in-memory");
+      } else {
+        console.error("⚠️  Redis error:", err.message);
+      }
     });
     redis.on("close", () => { redisReady = false; });
   } catch (err: any) {

@@ -1,13 +1,20 @@
 import rateLimit from "express-rate-limit";
 import { RedisStore } from "rate-limit-redis";
-import { redis } from "./redis.js";
+import { redis, isRedisReady } from "./redis.js";
 
 function makeStore(prefix: string) {
   if (!redis) return undefined;
-  return new RedisStore({
-    sendCommand: (...args: string[]) => redis!.call(...args) as any,
-    prefix: `rl:${prefix}:`,
-  });
+  try {
+    return new RedisStore({
+      sendCommand: (...args: string[]) => {
+        if (!isRedisReady()) throw new Error("Redis unavailable");
+        return redis!.call(...args) as any;
+      },
+      prefix: `rl:${prefix}:`,
+    });
+  } catch {
+    return undefined; // fall back to in-memory store
+  }
 }
 
 // Strict limiter for auth endpoints (login, register)
