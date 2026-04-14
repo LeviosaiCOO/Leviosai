@@ -2,7 +2,7 @@
 // In-memory min-heap by default. Swaps to Redis sorted-set when REDIS_URL set.
 
 import type { ReactorEvent } from "./types.js";
-import { redis } from "../lib/redis.js";
+import { redis, isRedisReady } from "../lib/redis.js";
 
 const REDIS_KEY = "reactor:queue";
 
@@ -14,54 +14,90 @@ export interface IPriorityQueue {
   drain(): Promise<ReactorEvent[]> | ReactorEvent[];
 }
 
-// ─── Redis-backed sorted-set queue ──────────────────────────────────────────
+// ─── Redis-backed sorted-set queue with in-memory fallback ──────────────────
 
 export class RedisPriorityQueue implements IPriorityQueue {
+  private fallback = new InMemoryPriorityQueue();
+  private usingFallback = false;
+
+  private checkRedis(): boolean {
+    if (!isRedisReady()) {
+      if (!this.usingFallback) {
+        console.warn("⚠️  Redis unavailable — Reactor queue falling back to in-memory");
+        this.usingFallback = true;
+      }
+      return false;
+    }
+    if (this.usingFallback) {
+      console.log("✅ Redis reconnected — Reactor queue back on Redis");
+      this.usingFallback = false;
+    }
+    return true;
+  }
+
   async enqueue(event: ReactorEvent): Promise<void> {
-    // Score = priority * 1e13 + createdAt ms — lower score = higher urgency
-    const score = event.metadata.priority * 1e13 + event.metadata.createdAt.getTime();
-    await redis!.zadd(REDIS_KEY, score, JSON.stringify(event));
+    if (!this.checkRedis()) return this.fallback.enqueue(event);
+    try {
+      const score = event.metadata.priority * 1e13 + event.metadata.createdAt.getTime();
+      await redis!.zadd(REDIS_KEY, score, JSON.stringify(event));
+    } catch (err: any) {
+      console.error("⚠️  Redis enqueue failed, using fallback:", err.message);
+      this.usingFallback = true;
+      this.fallback.enqueue(event);
+    }
   }
 
   async dequeue(): Promise<ReactorEvent | null> {
-    // Atomically pop the lowest-score member
-    const result = await redis!.zpopmin(REDIS_KEY, 1);
-    if (!result || result.length < 2) return null;
+    if (!this.checkRedis()) return this.fallback.dequeue();
     try {
+      const result = await redis!.zpopmin(REDIS_KEY, 1);
+      if (!result || result.length < 2) return this.fallback.dequeue();
       const raw = result[0] as string;
       const parsed = JSON.parse(raw);
-      // Restore Date objects
       parsed.metadata.createdAt = new Date(parsed.metadata.createdAt);
       return parsed as ReactorEvent;
-    } catch {
-      return null;
+    } catch (err: any) {
+      console.error("⚠️  Redis dequeue failed, using fallback:", err.message);
+      this.usingFallback = true;
+      return this.fallback.dequeue();
     }
   }
 
   async peek(): Promise<ReactorEvent | null> {
-    const result = await redis!.zrange(REDIS_KEY, 0, 0);
-    if (!result || result.length === 0) return null;
+    if (!this.checkRedis()) return this.fallback.peek();
     try {
+      const result = await redis!.zrange(REDIS_KEY, 0, 0);
+      if (!result || result.length === 0) return this.fallback.peek();
       const parsed = JSON.parse(result[0]);
       parsed.metadata.createdAt = new Date(parsed.metadata.createdAt);
       return parsed as ReactorEvent;
     } catch {
-      return null;
+      return this.fallback.peek();
     }
   }
 
   async size(): Promise<number> {
-    return redis!.zcard(REDIS_KEY);
+    if (!this.checkRedis()) return this.fallback.size();
+    try {
+      return await redis!.zcard(REDIS_KEY);
+    } catch {
+      return this.fallback.size();
+    }
   }
 
   async drain(): Promise<ReactorEvent[]> {
-    const members = await redis!.zrange(REDIS_KEY, 0, -1);
-    if (members.length > 0) await redis!.del(REDIS_KEY);
-    return members.map((m) => {
-      const p = JSON.parse(m);
-      p.metadata.createdAt = new Date(p.metadata.createdAt);
-      return p as ReactorEvent;
-    });
+    if (!this.checkRedis()) return this.fallback.drain();
+    try {
+      const members = await redis!.zrange(REDIS_KEY, 0, -1);
+      if (members.length > 0) await redis!.del(REDIS_KEY);
+      return members.map((m) => {
+        const p = JSON.parse(m);
+        p.metadata.createdAt = new Date(p.metadata.createdAt);
+        return p as ReactorEvent;
+      });
+    } catch {
+      return this.fallback.drain();
+    }
   }
 }
 

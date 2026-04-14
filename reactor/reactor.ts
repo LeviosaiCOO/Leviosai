@@ -120,19 +120,24 @@ export class Reactor {
   // ─── TICK LOOP ──────────────────────────────────────────────────────
 
   private async tick(): Promise<void> {
-    const event = await Promise.resolve(this.queue.dequeue());
-    if (!event) return;
+    try {
+      const event = await Promise.resolve(this.queue.dequeue());
+      if (!event) return;
 
-    // Check TTL expiry
-    if (event.metadata.ttlMs) {
-      const age = Date.now() - event.metadata.createdAt.getTime();
-      if (age > event.metadata.ttlMs) {
-        await this.logEvent(event, [], "expired");
-        return;
+      // Check TTL expiry
+      if (event.metadata.ttlMs) {
+        const age = Date.now() - event.metadata.createdAt.getTime();
+        if (age > event.metadata.ttlMs) {
+          await this.logEvent(event, [], "expired");
+          return;
+        }
       }
-    }
 
-    await this.processEvent(event);
+      await this.processEvent(event);
+    } catch (err: any) {
+      this.stats.errored++;
+      console.error("⚠️  Reactor tick error:", err.message);
+    }
   }
 
   // ─── EVENT PROCESSING ───────────────────────────────────────────────
