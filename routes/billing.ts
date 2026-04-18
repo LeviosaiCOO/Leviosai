@@ -37,6 +37,27 @@ router.get("/api/billing", requireAuth, async (req: Request, res: Response) => {
   }
 });
 
+// Save payment method metadata (demo — real card tokenization goes through Stripe Elements)
+// Stores last4/brand/exp for UI display only. Real PCI data never touches our server.
+router.post("/api/billing/payment-method", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { last4, brand, expMonth, expYear } = req.body || {};
+    if (!last4 || !brand) return res.status(400).json({ error: "last4 and brand required" });
+    // For now we just echo back — in prod this would create a Stripe SetupIntent
+    // and save the payment_method_id against the org's Stripe customer.
+    res.json({
+      ok: true,
+      last4: String(last4).slice(-4),
+      brand,
+      expMonth: Number(expMonth) || null,
+      expYear: Number(expYear) || null,
+      message: "Payment method updated (demo mode — wire Stripe Elements for live card capture)",
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Get available plans
 router.get("/api/billing/plans", requireAuth, async (_req: Request, res: Response) => {
   const plans = Object.entries(PLANS).map(([key, plan]) => ({

@@ -161,6 +161,13 @@ export const sandboxApi = {
   getConversation: (id) => request(`/api/sandbox/sessions/${id}/conversation`),
 };
 
+// Settings (org-scoped feature toggles & preferences)
+export const settingsApi = {
+  get: () => request("/api/settings"),
+  put: (settings) => request("/api/settings", { method: "PUT", body: JSON.stringify({ settings }) }),
+  patch: (partial) => request("/api/settings", { method: "PATCH", body: JSON.stringify(partial) }),
+};
+
 // Health
 export const health = {
   check: () => request("/api/health"),

@@ -41,8 +41,10 @@ export class RedisPriorityQueue implements IPriorityQueue {
       const score = event.metadata.priority * 1e13 + event.metadata.createdAt.getTime();
       await redis!.zadd(REDIS_KEY, score, JSON.stringify(event));
     } catch (err: any) {
-      console.error("⚠️  Redis enqueue failed, using fallback:", err.message);
-      this.usingFallback = true;
+      if (!this.usingFallback) {
+        console.error("⚠️  Redis enqueue failed, using fallback:", err.message);
+        this.usingFallback = true;
+      }
       this.fallback.enqueue(event);
     }
   }
@@ -57,8 +59,10 @@ export class RedisPriorityQueue implements IPriorityQueue {
       parsed.metadata.createdAt = new Date(parsed.metadata.createdAt);
       return parsed as ReactorEvent;
     } catch (err: any) {
-      console.error("⚠️  Redis dequeue failed, using fallback:", err.message);
-      this.usingFallback = true;
+      if (!this.usingFallback) {
+        console.error("⚠️  Redis dequeue failed, using fallback:", err.message);
+        this.usingFallback = true;
+      }
       return this.fallback.dequeue();
     }
   }

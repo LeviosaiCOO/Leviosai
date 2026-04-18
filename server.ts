@@ -16,6 +16,7 @@ import billingRoutes from "./routes/billing.js";
 import webhookRoutes from "./routes/webhooks.js";
 import reactorRoutes from "./routes/reactor.js";
 import sandboxRoutes from "./routes/sandbox.js";
+import settingsRoutes from "./routes/settings.js";
 import { Reactor } from "./reactor/reactor.js";
 import { createAllAgents } from "./reactor/agents/index.js";
 import { authLimiter, apiLimiter, aiLimiter, messagingLimiter } from "./lib/rate-limit.js";
@@ -51,6 +52,7 @@ app.use(messagingRoutes);
 app.use(aiRoutes);
 app.use(reactorRoutes);
 app.use(sandboxRoutes);
+app.use(settingsRoutes);
 
 // Sentry error handler (must be after routes, before Vite/static)
 Sentry.setupExpressErrorHandler(app);

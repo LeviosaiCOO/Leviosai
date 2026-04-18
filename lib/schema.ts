@@ -241,6 +241,15 @@ export const industryPricing = pgTable("industry_pricing", {
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 
+// ─── ORG SETTINGS (JSON blob for feature toggles & preferences) ─────────────
+// Schema-less key/value store so we can add new toggles without migrations.
+export const orgSettings = pgTable("org_settings", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id).notNull().unique(),
+  settings: text("settings").notNull().default("{}"), // JSON stringified
+  updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
 // ─── INSERT SCHEMAS ─────────────────────────────────────────────────────────
 
 export const insertOrganizationSchema = createInsertSchema(organizations).omit({

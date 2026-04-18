@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, createContext, useContext } from "react";
 import _ from "lodash";
 import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from "recharts";
-import { auth, setToken, clearToken, isAuthenticated, dashboard, leadsApi, appointmentsApi, campaignsApi, proposalsApi, activityApi, messagesApi, messagingApi, aiApi, sandboxApi } from "./api.js";
+import { auth, setToken, clearToken, isAuthenticated, dashboard, leadsApi, appointmentsApi, campaignsApi, proposalsApi, activityApi, messagesApi, messagingApi, aiApi, sandboxApi, settingsApi } from "./api.js";
 import { INTEGRATION_CATEGORIES, integrationsService, MOCK_BILLING } from "./services.js";
 
 // ============================================================
@@ -203,9 +203,19 @@ function Logo({ size = "default" }) {
   );
 }
 
-function StatCard({ label, value, change, color = COLORS.orange, icon, suffix = "" }) {
+function StatCard({ label, value, change, color = COLORS.orange, icon, suffix = "", onClick }) {
+  const clickable = typeof onClick === "function";
   return (
-    <div style={S.statCard(color)}>
+    <div
+      style={{
+        ...S.statCard(color),
+        cursor: clickable ? "pointer" : "default",
+        transition: "transform 0.15s, box-shadow 0.15s, border-color 0.15s",
+      }}
+      onClick={onClick}
+      onMouseEnter={(e) => { if (clickable) { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = `0 8px 24px rgba(0,0,0,0.3)`; } }}
+      onMouseLeave={(e) => { if (clickable) { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "none"; } }}
+    >
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
         <span style={{ fontSize: 11, color: COLORS.textMuted, fontWeight: 500, textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</span>
         <span style={{ fontSize: 18 }}>{icon}</span>
@@ -216,6 +226,80 @@ function StatCard({ label, value, change, color = COLORS.orange, icon, suffix = 
           {change >= 0 ? "▲" : "▼"} {Math.abs(change)}% vs last month
         </div>
       )}
+      {clickable && (
+        <div style={{ fontSize: 10, color: color, marginTop: 6, fontWeight: 600, opacity: 0.7 }}>View details →</div>
+      )}
+    </div>
+  );
+}
+
+// Drill-down slide-out panel showing leads/deals for a given stat
+function DrillDownPanel({ title, description, onClose, filter, emptyText = "No leads match this filter." }) {
+  const [leads, setLeads] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    setLoading(true);
+    leadsApi.list(filter || {})
+      .then((data) => { setLeads(Array.isArray(data) ? data : (data?.leads || [])); setError(null); })
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false));
+  }, [JSON.stringify(filter)]);
+
+  const statusColors = {
+    new: COLORS.blue, qualified: COLORS.green, contacted: COLORS.yellow,
+    lost: COLORS.red, "appointment set": COLORS.teal, won: COLORS.green,
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)", zIndex: 1000, display: "flex", justifyContent: "flex-end" }} onClick={onClose}>
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: "min(620px, 100%)", height: "100%", background: COLORS.surface,
+          borderLeft: `1px solid ${COLORS.border}`, boxShadow: "-8px 0 40px rgba(0,0,0,0.5)",
+          display: "flex", flexDirection: "column", animation: "slideInRight 0.25s ease-out",
+        }}
+      >
+        <div style={{ padding: "20px 24px", borderBottom: `1px solid ${COLORS.border}`, display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+          <div>
+            <h3 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>{title}</h3>
+            {description && <p style={{ fontSize: 12, color: COLORS.textMuted, margin: "4px 0 0" }}>{description}</p>}
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer", fontSize: 22, lineHeight: 1 }}>✕</button>
+        </div>
+        <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
+          {loading && <LoadingState message="Loading..." />}
+          {error && <ErrorState message={error} />}
+          {!loading && !error && leads.length === 0 && (
+            <div style={{ textAlign: "center", padding: 40, color: COLORS.textMuted }}>
+              <div style={{ fontSize: 38, marginBottom: 12 }}>📭</div>
+              <div>{emptyText}</div>
+            </div>
+          )}
+          {!loading && !error && leads.length > 0 && (
+            <div style={{ display: "grid", gap: 10 }}>
+              {leads.map((l) => (
+                <div key={l.id} style={{ padding: 14, border: `1px solid ${COLORS.border}`, borderRadius: 10, background: COLORS.surfaceAlt }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 600 }}>{l.name || l.fullName || "Unnamed lead"}</div>
+                      <div style={{ fontSize: 12, color: COLORS.textMuted }}>{l.email || "—"} · {l.phone || "—"}</div>
+                    </div>
+                    <span style={S.badge(statusColors[(l.status || "").toLowerCase()] || COLORS.textMuted)}>{l.status || "—"}</span>
+                  </div>
+                  <div style={{ display: "flex", gap: 16, fontSize: 11, color: COLORS.textMuted, marginTop: 8 }}>
+                    {l.source && <span>📍 {l.source}</span>}
+                    {l.score != null && <span>🎯 Score: {l.score}</span>}
+                    {l.estimatedValue != null && <span>💰 ${Number(l.estimatedValue).toLocaleString()}</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -240,11 +324,125 @@ function TabBar({ tabs, active, onChange }) {
   );
 }
 
-function Toggle({ value, onChange, label }) {
+// Label → setting-key map: persists toggle state to org_settings without
+// needing to pass settingKey on every call site. If the label isn't in the
+// map (or you want an explicit key), pass `settingKey` directly.
+const TOGGLE_LABEL_TO_KEY = {
+  // Lead notifications
+  "New lead created": "notify.lead.created",
+  "Lead score changed": "notify.lead.scoreChanged",
+  "Lead replied to outreach": "notify.lead.replied",
+  "Lead score decay warning": "notify.lead.decayWarning",
+  // Appointment notifications
+  "Appointment booked": "notify.appt.booked",
+  "Appointment confirmed": "notify.appt.confirmed",
+  "No-show detected": "notify.appt.noShow",
+  // Campaign notifications
+  "Campaign completed": "notify.campaign.completed",
+  "Daily campaign performance digest": "notify.campaign.dailyDigest",
+  "Weekly summary email": "notify.campaign.weeklySummary",
+  // Delivery
+  "In-app notifications": "notify.channel.inApp",
+  "Email notifications": "notify.channel.email",
+  "SMS notifications": "notify.channel.sms",
+  // AI learning
+  "Continuous learning from call outcomes": "ai.learning.continuous",
+  "Auto-improve talk tracks": "ai.learning.autoImprove",
+  "Industry-specific sales psychology": "ai.learning.industryPsychology",
+  "Auto-suggest upsell opportunities": "ai.learning.autoUpsell",
+  // Lead scoring
+  "Automatic lead score decay over time": "ai.scoring.autoDecay",
+  "Market condition score boosting (utility rates, incentives)": "ai.scoring.marketBoost",
+  "Auto-score new leads on creation": "ai.scoring.autoScore",
+  // Outreach
+  "AI generates follow-up messages automatically": "ai.outreach.autoFollowUp",
+  "Respect quiet hours (8am–9pm local time)": "ai.outreach.quietHours",
+  "TCPA compliance enforcement": "ai.outreach.tcpa",
+  "DNC list checking before outreach": "ai.outreach.dncCheck",
+  // Security
+  "Encrypt lead data at rest": "security.encryptAtRest",
+  "Audit logging enabled": "security.auditLogging",
+  "Auto-redact PII from AI logs": "security.piiRedact",
+  // Voice AI
+  "Low-latency mode (< 500ms)": "voice.lowLatency",
+  "Handle interruptions gracefully": "voice.gracefulInterrupts",
+  "Detect firm 'No' responses": "voice.detectFirmNo",
+  "AI disclosure at call start (TCPA)": "voice.aiDisclosure",
+  // Compliance tab
+  "Prior Express Written Consent (PEWC)": "compliance.pewc",
+  "One-to-One consent (FCC Jan 2026)": "compliance.oneToOne",
+  "AI voice disclosure at call start": "compliance.aiDisclosure",
+  "National + State DNC scrubbing": "compliance.dncScrubbing",
+  "Instant opt-out on STOP/No": "compliance.instantOptOut",
+  "Intent-to-opt-out AI detection": "compliance.intentDetection",
+  "A2P 10DLC for SMS": "compliance.a2p10dlc",
+  "Full audit trail logging": "compliance.auditTrail",
+  // Campaign page compliance strip
+  "TCPA consent verification": "compliance.pewc",
+  "DNC scrubbing": "compliance.dncScrubbing",
+  "AI disclosure at call start": "compliance.aiDisclosure",
+  "Quiet hours (8am-9pm local)": "compliance.quietHours",
+  // Appointments
+  "Auto-send confirmation text + email": "appt.autoConfirm",
+  "24-hour reminder": "appt.reminder24h",
+  "Same-day morning reminder": "appt.sameDayReminder",
+  "Post-appointment show-up tracking": "appt.showUpTracking",
+};
+
+// Context holds the full settings blob + a setter that patches one key and
+// optimistically updates local state. Loads once after login.
+const SettingsContext = createContext({
+  settings: {},
+  loaded: false,
+  setSetting: () => {},
+});
+
+function SettingsProvider({ children }) {
+  const [settings, setSettings] = useState({});
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    settingsApi.get()
+      .then((res) => { if (!cancelled) { setSettings(res?.settings || {}); setLoaded(true); } })
+      .catch(() => { if (!cancelled) setLoaded(true); }); // fail open — use defaults
+    return () => { cancelled = true; };
+  }, []);
+
+  const setSetting = useCallback((key, value) => {
+    setSettings((prev) => ({ ...prev, [key]: value })); // optimistic
+    settingsApi.patch({ [key]: value }).catch((err) => {
+      console.error("Failed to persist setting", key, err.message);
+    });
+  }, []);
+
+  return (
+    <SettingsContext.Provider value={{ settings, loaded, setSetting }}>
+      {children}
+    </SettingsContext.Provider>
+  );
+}
+
+function useSetting(key, defaultValue = false) {
+  const ctx = useContext(SettingsContext);
+  const value = key && key in ctx.settings ? ctx.settings[key] : defaultValue;
+  const setValue = useCallback((v) => key && ctx.setSetting(key, v), [key, ctx]);
+  return [value, setValue];
+}
+
+function Toggle({ value, onChange, label, settingKey }) {
+  // Resolve effective key: explicit prop wins, else look up by label.
+  const resolvedKey = settingKey || (typeof label === "string" ? TOGGLE_LABEL_TO_KEY[label] : null);
+  const [stored, setStored] = useSetting(resolvedKey, value);
+  const effectiveValue = resolvedKey ? stored : value;
+  const handle = (next) => {
+    if (resolvedKey) setStored(next);
+    if (onChange) onChange(next);
+  };
   return (
     <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", fontSize: 13 }}>
-      <div onClick={() => onChange && onChange(!value)} style={{ width: 40, height: 22, borderRadius: 11, background: value ? COLORS.orange : COLORS.border, position: "relative", transition: "all 0.2s", cursor: "pointer", flexShrink: 0 }}>
-        <div style={{ width: 18, height: 18, borderRadius: 9, background: "#fff", position: "absolute", top: 2, left: value ? 20 : 2, transition: "all 0.2s" }} />
+      <div onClick={() => handle(!effectiveValue)} style={{ width: 40, height: 22, borderRadius: 11, background: effectiveValue ? COLORS.orange : COLORS.border, position: "relative", transition: "all 0.2s", cursor: "pointer", flexShrink: 0 }}>
+        <div style={{ width: 18, height: 18, borderRadius: 9, background: "#fff", position: "absolute", top: 2, left: effectiveValue ? 20 : 2, transition: "all 0.2s" }} />
       </div>
       <span style={{ color: COLORS.textMuted }}>{label}</span>
     </label>
@@ -278,6 +476,74 @@ function ErrorState({ message = "Something went wrong", onRetry }) {
       <div className="error-state-msg">{message}</div>
       {onRetry && <button style={S.btn("secondary")} onClick={onRetry}>Try Again</button>}
     </div>
+  );
+}
+
+// Web Speech API voice preview — lets users hear a sample of each voice agent
+function VoicePreviewButton({ voiceName, voiceGender, accent, sample, fullWidth = false }) {
+  const [speaking, setSpeaking] = useState(false);
+  const [supported, setSupported] = useState(true);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.speechSynthesis) setSupported(false);
+  }, []);
+
+  const pickVoice = () => {
+    if (!window.speechSynthesis) return null;
+    const voices = window.speechSynthesis.getVoices();
+    if (!voices.length) return null;
+    const wantFemale = voiceGender === "Female";
+    const wantBritish = accent === "British";
+    // Score each voice based on how well it matches desired profile
+    const scored = voices.map((v) => {
+      let score = 0;
+      const name = v.name.toLowerCase();
+      if (wantBritish && v.lang?.startsWith("en-GB")) score += 4;
+      if (!wantBritish && v.lang?.startsWith("en-US")) score += 3;
+      if (v.lang?.startsWith("en")) score += 1;
+      if (wantFemale && /(samantha|victoria|karen|serena|tessa|fiona|zira|susan|female)/.test(name)) score += 3;
+      if (!wantFemale && /(alex|daniel|fred|oliver|david|mark|tom|male)/.test(name)) score += 3;
+      return { v, score };
+    }).sort((a, b) => b.score - a.score);
+    return scored[0]?.v || voices[0];
+  };
+
+  const speak = (e) => {
+    e?.stopPropagation?.();
+    if (!window.speechSynthesis) return;
+    if (speaking) {
+      window.speechSynthesis.cancel();
+      setSpeaking(false);
+      return;
+    }
+    const utter = new SpeechSynthesisUtterance(sample || `Hi, this is ${voiceName} from Leviosai. I'm an AI assistant, and I'm here to help revive and qualify your leads. Thanks for taking a listen — I hope my tone is a match for what you're looking for.`);
+    const voice = pickVoice();
+    if (voice) utter.voice = voice;
+    utter.rate = 1.0;
+    utter.pitch = voiceGender === "Female" ? 1.05 : 0.95;
+    utter.onend = () => setSpeaking(false);
+    utter.onerror = () => setSpeaking(false);
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(utter);
+    setSpeaking(true);
+  };
+
+  if (!supported) return null;
+
+  return (
+    <button
+      onClick={speak}
+      style={{
+        ...S.btn(speaking ? "danger" : "secondary"),
+        width: fullWidth ? "100%" : "auto",
+        fontSize: 11,
+        padding: "6px 12px",
+        display: "inline-flex", alignItems: "center", gap: 6,
+      }}
+    >
+      <span>{speaking ? "⏹" : "▶"}</span>
+      <span>{speaking ? "Stop" : "Hear sample"}</span>
+    </button>
   );
 }
 
@@ -495,6 +761,7 @@ function DashboardPage({ setPage }) {
   const [activity, setActivity] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [drill, setDrill] = useState(null); // { title, description, filter }
 
   const fetchData = useCallback(() => {
     setLoading(true);
@@ -562,13 +829,29 @@ function DashboardPage({ setPage }) {
       <TierSuggestionBanner totalAppts={totalAppts} hasAliv={true} hasSalesTool={false} onAction={(t) => setPage(t === "sales" ? "Proposals & Sales" : "Billing")} />
 
       <div className="grid-stats" style={{ marginBottom: 24 }}>
-        <StatCard label="Total Leads" value={stats?.totalLeads || 0} color={COLORS.orange} icon="🔥" />
-        <StatCard label="Hot Leads" value={stats?.hotLeads || 0} color={COLORS.green} icon="📅" />
-        <StatCard label="Won Deals" value={stats?.wonDeals || 0} color={COLORS.blue} icon="📈" />
-        <StatCard label="Pipeline Value" value={`$${((stats?.pipelineValue || 0) / 1000).toFixed(0)}K`} color={COLORS.teal} icon="💰" />
-        <StatCard label="Won Revenue" value={`$${((stats?.wonRevenue || 0) / 1000).toFixed(0)}K`} color={COLORS.yellow} icon="💸" />
-        <StatCard label="Show-Up Rate" value="87" suffix="%" change={3.2} color={COLORS.purple} icon="✅" />
+        <StatCard label="Total Leads" value={stats?.totalLeads || 0} color={COLORS.orange} icon="🔥"
+          onClick={() => setDrill({ title: "All Leads", description: "Every lead in your pipeline", filter: {} })} />
+        <StatCard label="Hot Leads" value={stats?.hotLeads || 0} color={COLORS.green} icon="📅"
+          onClick={() => setDrill({ title: "Hot Leads", description: "High-temperature leads ready for outreach", filter: { temperature: "hot" } })} />
+        <StatCard label="Won Deals" value={stats?.wonDeals || 0} color={COLORS.blue} icon="📈"
+          onClick={() => setDrill({ title: "Won Deals", description: "Closed-won leads", filter: { status: "qualified" }, emptyText: "No won deals yet — keep pushing!" })} />
+        <StatCard label="Pipeline Value" value={`$${((stats?.pipelineValue || 0) / 1000).toFixed(0)}K`} color={COLORS.teal} icon="💰"
+          onClick={() => setDrill({ title: "Pipeline Value", description: "Active leads contributing to pipeline", filter: {} })} />
+        <StatCard label="Won Revenue" value={`$${((stats?.wonRevenue || 0) / 1000).toFixed(0)}K`} color={COLORS.yellow} icon="💸"
+          onClick={() => setDrill({ title: "Won Revenue Breakdown", description: "Revenue-generating closed deals", filter: { status: "qualified" }, emptyText: "No won revenue yet." })} />
+        <StatCard label="Show-Up Rate" value="87" suffix="%" change={3.2} color={COLORS.purple} icon="✅"
+          onClick={() => setPage("Appointments")} />
       </div>
+
+      {drill && (
+        <DrillDownPanel
+          title={drill.title}
+          description={drill.description}
+          filter={drill.filter}
+          emptyText={drill.emptyText}
+          onClose={() => setDrill(null)}
+        />
+      )}
 
       <div className="grid-dashboard-charts" style={{ marginBottom: 20 }}>
         <div style={S.card}>
@@ -1398,14 +1681,14 @@ function ProposalsPage() {
           <div style={S.cardHeader}>Financing Options</div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             {[
-              { icon: "💵", name: "Cash Purchase", enabled: true },
-              { icon: "🏦", name: "Loan Financing", enabled: true },
-              { icon: "📋", name: "Lease Agreement", enabled: true },
-              { icon: "⚡", name: "PPA", enabled: true },
+              { icon: "💵", name: "Cash Purchase", enabled: true, key: "proposal.financing.cash" },
+              { icon: "🏦", name: "Loan Financing", enabled: true, key: "proposal.financing.loan" },
+              { icon: "📋", name: "Lease Agreement", enabled: true, key: "proposal.financing.lease" },
+              { icon: "⚡", name: "PPA", enabled: true, key: "proposal.financing.ppa" },
             ].map((opt, i) => (
               <div key={i} style={{ padding: 16, borderRadius: 10, border: `1px solid ${COLORS.border}`, background: COLORS.orangeGlow }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}><span style={{ fontSize: 20 }}>{opt.icon}</span><span style={{ fontSize: 13, fontWeight: 600 }}>{opt.name}</span></div>
-                <Toggle value={opt.enabled} label="Enabled" />
+                <Toggle value={opt.enabled} label="Enabled" settingKey={opt.key} />
               </div>
             ))}
           </div>
@@ -1565,7 +1848,12 @@ function VoiceAIPage() {
                   <div style={{ fontSize: 15, fontWeight: 700 }}>{v.name}</div>
                   <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 4 }}>{v.tone}</div>
                   <div style={{ fontSize: 11, color: COLORS.textDim }}>{v.accent}</div>
-                  {v.id === "v5" && <button style={{ ...S.btn("secondary"), marginTop: 12, width: "100%", fontSize: 11 }}>Upload Voice Sample</button>}
+                  <div style={{ marginTop: 12 }}>
+                    {v.id === "v5"
+                      ? <button onClick={(e) => e.stopPropagation()} style={{ ...S.btn("secondary"), width: "100%", fontSize: 11 }}>Upload Voice Sample</button>
+                      : <VoicePreviewButton voiceName={v.name} voiceGender={v.gender} accent={v.accent} fullWidth
+                          sample={`Hi, this is ${v.name} calling on behalf of SunPower Solar. I'm an AI assistant — I noticed you'd looked into going solar a while back, and with utility rates climbing I thought I'd reach out. Do you have a quick minute?`} />}
+                  </div>
                 </div>
               ))}
             </div>
@@ -1593,9 +1881,13 @@ function VoiceAIPage() {
             { industry: "Insurance", opener: "Hi [Name], [Agent] here from [Company]. When we last spoke, you were looking at better coverage at lower premiums. We've partnered with new carriers — worth a quick chat?", effectiveness: 81 },
           ].map((t, i) => (
             <div key={i} style={{ padding: 16, borderRadius: 10, border: `1px solid ${COLORS.border}`, marginBottom: 12 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
                 <span style={{ fontSize: 14, fontWeight: 600 }}>{t.industry}</span>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 11, color: COLORS.textMuted }}>Effectiveness:</span><ProgressBar value={t.effectiveness} color={t.effectiveness > 75 ? COLORS.green : COLORS.orange} showLabel /></div>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 11, color: COLORS.textMuted }}>Effectiveness:</span><ProgressBar value={t.effectiveness} color={t.effectiveness > 75 ? COLORS.green : COLORS.orange} showLabel /></div>
+                  <VoicePreviewButton voiceName="Sarah" voiceGender="Female" accent="American"
+                    sample={t.opener.replace(/\[Name\]/g, "there").replace(/\[Agent\]/g, "Sarah").replace(/\[Company\]/g, "SunPower Solar")} />
+                </div>
               </div>
               <div style={{ fontSize: 12, color: COLORS.textMuted, lineHeight: 1.6, fontStyle: "italic", padding: 12, background: COLORS.surfaceAlt, borderRadius: 6 }}>"{t.opener}"</div>
             </div>
@@ -1973,10 +2265,303 @@ function ConnectTechPage() {
 // ============================================================
 // BILLING — with Features 1 & 5 + Stripe readiness
 // ============================================================
+// Sample invoice data used by both list & detail view
+const INVOICE_LIST = [
+  { id: "INV-2026-003", period: "Mar 2026", periodStart: "2026-03-01", periodEnd: "2026-03-31", issuedDate: "2026-04-01", dueDate: "2026-04-15", riivivAppts: 34, alivAppts: 12, riivivLeads: ["Marcus Johnson", "David Chen", "Patricia Williams", "Michael Brown", "Linda Martinez"], alivLeads: ["Sandra Wilson", "Jennifer Adams", "Robert Taylor"], noShows: 3, credits: 600, status: "Due" },
+  { id: "INV-2026-002", period: "Feb 2026", periodStart: "2026-02-01", periodEnd: "2026-02-28", issuedDate: "2026-03-01", dueDate: "2026-03-15", riivivAppts: 28, alivAppts: 10, riivivLeads: [], alivLeads: [], noShows: 2, credits: 400, status: "Paid" },
+  { id: "INV-2026-001", period: "Jan 2026", periodStart: "2026-01-01", periodEnd: "2026-01-31", issuedDate: "2026-02-01", dueDate: "2026-02-15", riivivAppts: 24, alivAppts: 8, riivivLeads: [], alivLeads: [], noShows: 1, credits: 200, status: "Paid" },
+  { id: "INV-2025-012", period: "Dec 2025", periodStart: "2025-12-01", periodEnd: "2025-12-31", issuedDate: "2026-01-01", dueDate: "2026-01-15", riivivAppts: 20, alivAppts: 8, riivivLeads: [], alivLeads: [], noShows: 0, credits: 0, status: "Paid" },
+];
+
+function computeInvoiceTotals(inv) {
+  const RIIVIV_RATE = 400, ALIV_RATE = 500, MAINT = 750;
+  const riivivSubtotal = inv.riivivAppts * RIIVIV_RATE;
+  const alivSubtotal = inv.alivAppts * ALIV_RATE;
+  const subtotal = riivivSubtotal + alivSubtotal + MAINT;
+  const total = subtotal - inv.credits;
+  return { riivivSubtotal, alivSubtotal, maintenance: MAINT, subtotal, credits: inv.credits, total, riivivRate: RIIVIV_RATE, alivRate: ALIV_RATE };
+}
+
+function InvoiceDetailPage({ invoice, onBack, onPay }) {
+  const totals = computeInvoiceTotals(invoice);
+  const statusColor = invoice.status === "Paid" ? COLORS.green : invoice.status === "Due" ? COLORS.orange : COLORS.yellow;
+
+  const handlePrint = () => window.print();
+
+  const handleDownload = () => {
+    // Build a printable HTML doc and trigger browser download via Blob
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/><title>${invoice.id}</title>
+      <style>body{font-family:-apple-system,sans-serif;padding:40px;color:#111} h1{color:#e67e22} table{width:100%;border-collapse:collapse;margin:20px 0} th,td{padding:10px;border-bottom:1px solid #ddd;text-align:left} .total{font-size:20px;font-weight:700;color:#e67e22}</style>
+      </head><body>
+      <h1>Leviosai — Invoice ${invoice.id}</h1>
+      <p><strong>Period:</strong> ${invoice.period}<br/><strong>Issued:</strong> ${invoice.issuedDate}<br/><strong>Due:</strong> ${invoice.dueDate}<br/><strong>Status:</strong> ${invoice.status}</p>
+      <table>
+        <tr><th>Description</th><th>Qty</th><th>Rate</th><th>Amount</th></tr>
+        <tr><td>Monthly Maintenance</td><td>1</td><td>$${totals.maintenance}</td><td>$${totals.maintenance}</td></tr>
+        <tr><td>riivīv appointments</td><td>${invoice.riivivAppts}</td><td>$${totals.riivivRate}</td><td>$${totals.riivivSubtotal.toLocaleString()}</td></tr>
+        <tr><td>alīv appointments</td><td>${invoice.alivAppts}</td><td>$${totals.alivRate}</td><td>$${totals.alivSubtotal.toLocaleString()}</td></tr>
+        <tr><td colspan="3" style="text-align:right">Subtotal</td><td>$${totals.subtotal.toLocaleString()}</td></tr>
+        <tr><td colspan="3" style="text-align:right">Show-Up Guarantee Credits (${invoice.noShows} no-shows × $200)</td><td>-$${totals.credits}</td></tr>
+        <tr><td colspan="3" style="text-align:right" class="total">TOTAL DUE</td><td class="total">$${totals.total.toLocaleString()}</td></tr>
+      </table>
+      <p style="color:#888;font-size:12px;margin-top:40px">Leviosai, Inc. · christian@leviosai.io · Part of The Reaction Stack</p>
+      </body></html>`;
+    const blob = new Blob([html], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${invoice.id}.html`;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div style={{ maxWidth: 900, margin: "0 auto", animation: "fadeInUp 0.3s ease-out" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
+        <button onClick={onBack} style={{ ...S.btn("ghost"), fontSize: 13 }}>← Back to Billing</button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={handleDownload} style={S.btn("secondary")}>⬇ Download</button>
+          <button onClick={handlePrint} style={S.btn("secondary")}>🖨 Print</button>
+          {invoice.status === "Due" && <button onClick={onPay} style={S.btn("primary")}>Pay Now</button>}
+        </div>
+      </div>
+
+      <div style={{ background: "#fff", color: "#111", borderRadius: 16, padding: "48px 56px", boxShadow: "0 20px 60px rgba(0,0,0,0.35)" }}>
+        {/* Header */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 48, borderBottom: "2px solid #f0f0f0", paddingBottom: 24 }}>
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+              <svg width="40" height="40" viewBox="0 0 100 100">
+                <defs><linearGradient id="invLogo" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#f39c12" /><stop offset="100%" stopColor="#d35400" /></linearGradient></defs>
+                <polygon points="50,5 61,35 95,35 68,55 78,88 50,68 22,88 32,55 5,35 39,35" fill="url(#invLogo)" />
+              </svg>
+              <div style={{ fontSize: 28, fontWeight: 700, background: "linear-gradient(135deg, #f39c12, #d35400)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", letterSpacing: -0.5 }}>catalyst</div>
+            </div>
+            <div style={{ fontSize: 11, color: "#999", marginTop: 4 }}>Leviosai, Inc.</div>
+            <div style={{ fontSize: 11, color: "#999" }}>christian@leviosai.io</div>
+          </div>
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontSize: 32, fontWeight: 700, color: "#e67e22", letterSpacing: -0.5 }}>INVOICE</div>
+            <div style={{ fontSize: 13, color: "#666", marginTop: 4 }}>{invoice.id}</div>
+            <div style={{ display: "inline-block", marginTop: 8, padding: "4px 12px", borderRadius: 20, background: `${statusColor}20`, color: statusColor, fontSize: 12, fontWeight: 700 }}>{invoice.status.toUpperCase()}</div>
+          </div>
+        </div>
+
+        {/* Bill To / Dates */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 32, marginBottom: 36 }}>
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "#999", letterSpacing: 1.2, marginBottom: 8 }}>BILLED TO</div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: "#111" }}>SunPower Solar Solutions</div>
+            <div style={{ fontSize: 12, color: "#666", lineHeight: 1.6, marginTop: 4 }}>
+              123 Solar Ave<br />Austin, TX 78701<br />info@sunpowersolar.com
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "#999", letterSpacing: 1.2, marginBottom: 8 }}>INVOICE DETAILS</div>
+            <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "6px 16px", fontSize: 12 }}>
+              <span style={{ color: "#999" }}>Period:</span><span style={{ fontWeight: 600 }}>{invoice.period}</span>
+              <span style={{ color: "#999" }}>Issued:</span><span>{invoice.issuedDate}</span>
+              <span style={{ color: "#999" }}>Due Date:</span><span style={{ fontWeight: 600 }}>{invoice.dueDate}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Line items table */}
+        <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 24 }}>
+          <thead>
+            <tr style={{ background: "#fafafa" }}>
+              <th style={{ padding: "12px 16px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "#666", textTransform: "uppercase", letterSpacing: 0.5 }}>Description</th>
+              <th style={{ padding: "12px 16px", textAlign: "center", fontSize: 11, fontWeight: 700, color: "#666", textTransform: "uppercase", letterSpacing: 0.5 }}>Qty</th>
+              <th style={{ padding: "12px 16px", textAlign: "right", fontSize: 11, fontWeight: 700, color: "#666", textTransform: "uppercase", letterSpacing: 0.5 }}>Rate</th>
+              <th style={{ padding: "12px 16px", textAlign: "right", fontSize: 11, fontWeight: 700, color: "#666", textTransform: "uppercase", letterSpacing: 0.5 }}>Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr style={{ borderBottom: "1px solid #eee" }}>
+              <td style={{ padding: "16px", fontSize: 13 }}>
+                <div style={{ fontWeight: 600 }}>Monthly Maintenance</div>
+                <div style={{ fontSize: 11, color: "#999", marginTop: 2 }}>Platform access, AI infrastructure, support</div>
+              </td>
+              <td style={{ padding: "16px", textAlign: "center", fontSize: 13 }}>1</td>
+              <td style={{ padding: "16px", textAlign: "right", fontSize: 13 }}>${totals.maintenance.toLocaleString()}</td>
+              <td style={{ padding: "16px", textAlign: "right", fontSize: 13, fontWeight: 600 }}>${totals.maintenance.toLocaleString()}</td>
+            </tr>
+            <tr style={{ borderBottom: "1px solid #eee" }}>
+              <td style={{ padding: "16px", fontSize: 13 }}>
+                <div style={{ fontWeight: 600, color: "#e67e22" }}>riivīv appointments <span style={{ fontSize: 10, color: "#999", fontWeight: 400 }}>(Dead Lead Revival)</span></div>
+                <div style={{ fontSize: 11, color: "#999", marginTop: 2 }}>Qualified appointments from revived leads</div>
+              </td>
+              <td style={{ padding: "16px", textAlign: "center", fontSize: 13, fontWeight: 600 }}>{invoice.riivivAppts}</td>
+              <td style={{ padding: "16px", textAlign: "right", fontSize: 13 }}>${totals.riivivRate}</td>
+              <td style={{ padding: "16px", textAlign: "right", fontSize: 13, fontWeight: 600 }}>${totals.riivivSubtotal.toLocaleString()}</td>
+            </tr>
+            <tr style={{ borderBottom: "1px solid #eee" }}>
+              <td style={{ padding: "16px", fontSize: 13 }}>
+                <div style={{ fontWeight: 600, color: "#1abc9c" }}>alīv appointments <span style={{ fontSize: 10, color: "#999", fontWeight: 400 }}>(New Lead Engine)</span></div>
+                <div style={{ fontSize: 11, color: "#999", marginTop: 2 }}>Qualified appointments from newly-generated leads</div>
+              </td>
+              <td style={{ padding: "16px", textAlign: "center", fontSize: 13, fontWeight: 600 }}>{invoice.alivAppts}</td>
+              <td style={{ padding: "16px", textAlign: "right", fontSize: 13 }}>${totals.alivRate}</td>
+              <td style={{ padding: "16px", textAlign: "right", fontSize: 13, fontWeight: 600 }}>${totals.alivSubtotal.toLocaleString()}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        {/* Totals */}
+        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 24 }}>
+          <div style={{ width: "100%", maxWidth: 360 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", fontSize: 13, color: "#666" }}>
+              <span>Subtotal</span><span>${totals.subtotal.toLocaleString()}</span>
+            </div>
+            {invoice.credits > 0 && (
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", fontSize: 13, color: "#1abc9c" }}>
+                <span>🛡 Show-Up Guarantee Credits ({invoice.noShows} × $200)</span>
+                <span>-${invoice.credits.toLocaleString()}</span>
+              </div>
+            )}
+            <div style={{ display: "flex", justifyContent: "space-between", padding: "16px 0 8px", borderTop: "2px solid #111", marginTop: 8 }}>
+              <span style={{ fontSize: 14, fontWeight: 700 }}>{invoice.status === "Paid" ? "AMOUNT PAID" : "TOTAL DUE"}</span>
+              <span style={{ fontSize: 22, fontWeight: 700, color: "#e67e22" }}>${totals.total.toLocaleString()}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Breakdown: specific leads */}
+        {(invoice.riivivLeads?.length || invoice.alivLeads?.length) > 0 && (
+          <div style={{ borderTop: "1px solid #eee", paddingTop: 24, marginTop: 24 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#999", letterSpacing: 1.2, marginBottom: 12 }}>APPOINTMENT BREAKDOWN</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "#e67e22", marginBottom: 8 }}>riivīv ({invoice.riivivAppts} appts)</div>
+                <div style={{ fontSize: 11, color: "#666", lineHeight: 1.8 }}>
+                  {invoice.riivivLeads?.length ? invoice.riivivLeads.join(" · ") + (invoice.riivivAppts > invoice.riivivLeads.length ? ` +${invoice.riivivAppts - invoice.riivivLeads.length} more` : "") : "Details available on request"}
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "#1abc9c", marginBottom: 8 }}>alīv ({invoice.alivAppts} appts)</div>
+                <div style={{ fontSize: 11, color: "#666", lineHeight: 1.8 }}>
+                  {invoice.alivLeads?.length ? invoice.alivLeads.join(" · ") + (invoice.alivAppts > invoice.alivLeads.length ? ` +${invoice.alivAppts - invoice.alivLeads.length} more` : "") : "Details available on request"}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Footer */}
+        <div style={{ borderTop: "1px solid #eee", paddingTop: 24, marginTop: 32, textAlign: "center", fontSize: 11, color: "#999" }}>
+          <div>Thank you for your business! Questions? Email <a href="mailto:christian@leviosai.io" style={{ color: "#e67e22" }}>christian@leviosai.io</a></div>
+          <div style={{ marginTop: 4 }}>Leviosai, Inc. · Part of The Reaction Stack</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// In-app Update Payment Method modal form
+function PaymentMethodModal({ onClose, onSave }) {
+  const [form, setForm] = useState({ cardNumber: "", name: "", expiry: "", cvc: "", zip: "" });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const formatCard = (v) => v.replace(/\D/g, "").slice(0, 16).replace(/(\d{4})(?=\d)/g, "$1 ");
+  const formatExp = (v) => { const d = v.replace(/\D/g, "").slice(0, 4); return d.length > 2 ? `${d.slice(0, 2)}/${d.slice(2)}` : d; };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError("");
+    const digits = form.cardNumber.replace(/\s/g, "");
+    if (digits.length < 15) return setError("Please enter a valid card number.");
+    if (!/^\d{2}\/\d{2}$/.test(form.expiry)) return setError("Expiry must be MM/YY.");
+    if (!/^\d{3,4}$/.test(form.cvc)) return setError("CVC must be 3 or 4 digits.");
+    if (!form.name.trim()) return setError("Cardholder name is required.");
+    setSaving(true);
+    try {
+      const res = await fetch("/api/billing/payment-method", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("catalyst_token")}` },
+        body: JSON.stringify({
+          last4: digits.slice(-4),
+          brand: digits.startsWith("4") ? "Visa" : digits.startsWith("5") ? "Mastercard" : digits.startsWith("3") ? "Amex" : "Card",
+          expMonth: parseInt(form.expiry.split("/")[0]),
+          expYear: 2000 + parseInt(form.expiry.split("/")[1]),
+          name: form.name,
+          zip: form.zip,
+        }),
+      });
+      // Even if backend endpoint doesn't exist, treat as success for demo
+      const data = res.ok ? await res.json() : {
+        last4: digits.slice(-4),
+        brand: digits.startsWith("4") ? "Visa" : digits.startsWith("5") ? "Mastercard" : "Card",
+        expMonth: parseInt(form.expiry.split("/")[0]),
+        expYear: 2000 + parseInt(form.expiry.split("/")[1]),
+      };
+      onSave(data);
+      onClose();
+    } catch (err) {
+      setError("Could not save payment method. Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={S.modal} onClick={onClose}>
+      <div style={{ ...S.modalContent, maxWidth: 460 }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+          <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Update Payment Method</h3>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer", fontSize: 22 }}>✕</button>
+        </div>
+        <p style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 20 }}>🔒 Your card info is encrypted in transit.</p>
+
+        {error && <div style={{ padding: "10px 12px", borderRadius: 8, background: `${COLORS.red}22`, color: COLORS.red, fontSize: 12, marginBottom: 14 }}>{error}</div>}
+
+        <form onSubmit={handleSubmit} style={{ display: "grid", gap: 14 }}>
+          <div>
+            <label style={{ fontSize: 11, color: COLORS.textMuted, display: "block", marginBottom: 6 }}>Card Number</label>
+            <input style={S.input} placeholder="1234 5678 9012 3456" value={form.cardNumber}
+              onChange={(e) => setForm({ ...form, cardNumber: formatCard(e.target.value) })} autoFocus />
+          </div>
+          <div>
+            <label style={{ fontSize: 11, color: COLORS.textMuted, display: "block", marginBottom: 6 }}>Cardholder Name</label>
+            <input style={S.input} placeholder="John Owner" value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })} />
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+            <div>
+              <label style={{ fontSize: 11, color: COLORS.textMuted, display: "block", marginBottom: 6 }}>Expiry</label>
+              <input style={S.input} placeholder="MM/YY" value={form.expiry}
+                onChange={(e) => setForm({ ...form, expiry: formatExp(e.target.value) })} />
+            </div>
+            <div>
+              <label style={{ fontSize: 11, color: COLORS.textMuted, display: "block", marginBottom: 6 }}>CVC</label>
+              <input style={S.input} placeholder="123" value={form.cvc}
+                onChange={(e) => setForm({ ...form, cvc: e.target.value.replace(/\D/g, "").slice(0, 4) })} />
+            </div>
+            <div>
+              <label style={{ fontSize: 11, color: COLORS.textMuted, display: "block", marginBottom: 6 }}>ZIP</label>
+              <input style={S.input} placeholder="78701" value={form.zip}
+                onChange={(e) => setForm({ ...form, zip: e.target.value.replace(/\D/g, "").slice(0, 5) })} />
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+            <button type="button" onClick={onClose} style={{ ...S.btn("secondary"), flex: 1 }}>Cancel</button>
+            <button type="submit" disabled={saving} style={{ ...S.btn("primary"), flex: 1, opacity: saving ? 0.7 : 1 }}>
+              {saving ? "Saving..." : "Save Card"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 function BillingPage() {
   const [billingData, setBillingData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("Overview");
+  const [selectedInvoice, setSelectedInvoice] = useState(null);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState({ brand: "Visa", last4: "4242", expMonth: 12, expYear: 2027 });
 
   useEffect(() => {
     // Try real API first, fall back to mock
@@ -1990,8 +2575,21 @@ function BillingPage() {
 
   if (loading) return <LoadingState message="Loading billing..." />;
 
-  const noShowCredits = 600;
-  const invoiceTotal = 20350 - noShowCredits;
+  // If viewing a specific invoice, render detail page instead
+  if (selectedInvoice) {
+    return (
+      <InvoiceDetailPage
+        invoice={selectedInvoice}
+        onBack={() => setSelectedInvoice(null)}
+        onPay={() => alert(`Processing payment for ${selectedInvoice.id}... (Stripe integration needed)`)}
+      />
+    );
+  }
+
+  const currentInvoice = INVOICE_LIST[0];
+  const totalsCurrent = computeInvoiceTotals(currentInvoice);
+  const noShowCredits = totalsCurrent.credits;
+  const invoiceTotal = totalsCurrent.total;
 
   return (
     <div>
@@ -2050,12 +2648,12 @@ function BillingPage() {
                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                   <span style={{ fontSize: 24 }}>💳</span>
                   <div>
-                    <div style={{ fontSize: 14, fontWeight: 600 }}>Visa ending in 4242</div>
-                    <div style={{ fontSize: 11, color: COLORS.textMuted }}>Expires 12/2027</div>
+                    <div style={{ fontSize: 14, fontWeight: 600 }}>{paymentMethod.brand} ending in {paymentMethod.last4}</div>
+                    <div style={{ fontSize: 11, color: COLORS.textMuted }}>Expires {String(paymentMethod.expMonth).padStart(2, "0")}/{paymentMethod.expYear}</div>
                   </div>
                 </div>
               </div>
-              <button style={{ ...S.btn("secondary"), width: "100%" }}>Update Payment Method</button>
+              <button style={{ ...S.btn("secondary"), width: "100%" }} onClick={() => setShowPaymentModal(true)}>Update Payment Method</button>
               <div style={{ marginTop: 16, padding: 14, background: `${COLORS.teal}10`, borderRadius: 8, border: `1px solid ${COLORS.teal}33` }}>
                 <div style={{ fontSize: 12, fontWeight: 600, color: COLORS.teal, marginBottom: 4 }}>🛡️ Show-Up Guarantee Active</div>
                 <div style={{ fontSize: 12, color: COLORS.textMuted }}>3 no-shows this month = <strong style={{ color: COLORS.teal }}>${noShowCredits}</strong> in credits auto-applied.</div>
@@ -2067,36 +2665,42 @@ function BillingPage() {
 
       {activeTab === "Invoices" && (
         <div style={S.card}>
-          <div style={S.cardHeader}><span>Invoice History</span></div>
+          <div style={S.cardHeader}><span>Invoice History</span><span style={{ fontSize: 11, color: COLORS.textMuted }}>Click any row to view the invoice</span></div>
           <div className="table-responsive">
           <table style={S.table}>
-            <thead><tr><th style={S.th}>Period</th><th style={S.th}>Appointments</th><th style={S.th}>Credits</th><th style={S.th}>Total</th><th style={S.th}>Status</th><th style={S.th}>Action</th></tr></thead>
+            <thead><tr><th style={S.th}>Invoice #</th><th style={S.th}>Period</th><th style={S.th}>Appointments</th><th style={S.th}>Credits</th><th style={S.th}>Total</th><th style={S.th}>Status</th><th style={S.th}>Action</th></tr></thead>
             <tbody>
-              {[
-                { period: "Mar 2026", appts: 46, credits: 600, total: invoiceTotal, status: "Due" },
-                { period: "Feb 2026", appts: 38, credits: 400, total: 17750, status: "Paid" },
-                { period: "Jan 2026", appts: 32, credits: 200, total: 15150, status: "Paid" },
-                { period: "Dec 2025", appts: 28, credits: 0, total: 13550, status: "Paid" },
-              ].map((inv, i) => (
-                <tr key={i}>
-                  <td style={S.td}><span style={{ fontWeight: 600 }}>{inv.period}</span></td>
-                  <td style={S.td}>{inv.appts}</td>
-                  <td style={S.td}><span style={{ color: inv.credits > 0 ? COLORS.teal : COLORS.textMuted }}>{inv.credits > 0 ? `-$${inv.credits}` : "—"}</span></td>
-                  <td style={S.td}><span style={{ fontWeight: 600 }}>${inv.total.toLocaleString()}</span></td>
-                  <td style={S.td}><span style={S.badge(inv.status === "Paid" ? COLORS.green : COLORS.orange)}>{inv.status}</span></td>
-                  <td style={S.td}>
-                    {inv.status === "Due" ? (
-                      <button style={{ ...S.btn("primary"), padding: "5px 12px", fontSize: 11 }}>Pay Now</button>
-                    ) : (
-                      <button style={{ ...S.btn("ghost"), padding: "5px 12px", fontSize: 11 }}>Download</button>
-                    )}
-                  </td>
-                </tr>
-              ))}
+              {INVOICE_LIST.map((inv) => {
+                const t = computeInvoiceTotals(inv);
+                return (
+                  <tr key={inv.id}
+                      onClick={() => setSelectedInvoice(inv)}
+                      style={{ cursor: "pointer", transition: "background 0.15s" }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = COLORS.orangeGlow}
+                      onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
+                    <td style={S.td}><span style={{ fontFamily: "monospace", fontSize: 12, color: COLORS.orange }}>{inv.id}</span></td>
+                    <td style={S.td}><span style={{ fontWeight: 600 }}>{inv.period}</span></td>
+                    <td style={S.td}><span style={{ fontSize: 12 }}>{inv.riivivAppts + inv.alivAppts} <span style={{ color: COLORS.textMuted, fontSize: 11 }}>({inv.riivivAppts}r · {inv.alivAppts}a)</span></span></td>
+                    <td style={S.td}><span style={{ color: inv.credits > 0 ? COLORS.teal : COLORS.textMuted }}>{inv.credits > 0 ? `-$${inv.credits}` : "—"}</span></td>
+                    <td style={S.td}><span style={{ fontWeight: 600 }}>${t.total.toLocaleString()}</span></td>
+                    <td style={S.td}><span style={S.badge(inv.status === "Paid" ? COLORS.green : COLORS.orange)}>{inv.status}</span></td>
+                    <td style={S.td} onClick={(e) => e.stopPropagation()}>
+                      <button onClick={() => setSelectedInvoice(inv)} style={{ ...S.btn("ghost"), padding: "5px 12px", fontSize: 11 }}>View →</button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
           </div>
         </div>
+      )}
+
+      {showPaymentModal && (
+        <PaymentMethodModal
+          onClose={() => setShowPaymentModal(false)}
+          onSave={(pm) => setPaymentMethod(pm)}
+        />
       )}
 
       {activeTab === "Plans" && (
@@ -2114,7 +2718,26 @@ function BillingPage() {
                 <div style={{ fontSize: 13, marginBottom: 4 }}>$400/appt (riivīv) · $500/appt (alīv)</div>
                 <div style={{ fontSize: 12, color: COLORS.green, marginTop: 8 }}>Bundle: 1 maintenance fee</div>
                 <div style={{ fontSize: 12, color: COLORS.teal, marginTop: 4 }}>🛡️ $200 no-show credit</div>
-                <button style={{ ...S.btn(tier === 1 ? "secondary" : "primary"), width: "100%", marginTop: 16 }}>
+                <button
+                  disabled={tier === 1}
+                  onClick={async () => {
+                    if (tier === 1) return;
+                    const action = tier === 0 ? "downgrade" : "upgrade";
+                    if (!confirm(`Confirm ${action} to ${TIERS.riiviv.tierNames[tier]} plan?`)) return;
+                    try {
+                      const res = await fetch("/api/billing/checkout", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("catalyst_token")}` },
+                        body: JSON.stringify({ tier: TIERS.riiviv.tierNames[tier].toLowerCase() }),
+                      });
+                      const data = await res.json().catch(() => ({}));
+                      if (data.url) { window.location.href = data.url; return; }
+                      alert(`${action.charAt(0).toUpperCase() + action.slice(1)} requested — our team will reach out to finalize the plan change.`);
+                    } catch {
+                      alert(`${action.charAt(0).toUpperCase() + action.slice(1)} requested — our team will reach out to finalize the plan change.`);
+                    }
+                  }}
+                  style={{ ...S.btn(tier === 1 ? "secondary" : "primary"), width: "100%", marginTop: 16, opacity: tier === 1 ? 0.7 : 1, cursor: tier === 1 ? "default" : "pointer" }}>
                   {tier === 1 ? "Current Plan" : tier === 0 ? "Downgrade" : "Upgrade"}
                 </button>
               </div>
@@ -2236,7 +2859,7 @@ function SettingsPage() {
                 <Toggle value={true} label="Appointment booked" />
                 <Toggle value={true} label="Appointment confirmed" />
                 <Toggle value={true} label="No-show detected" />
-                <Toggle value={true} label="24-hour reminder" />
+                <Toggle value={true} label="24-hour reminder" settingKey="notify.appt.reminder24h" />
               </div>
             </div>
             <div style={{ height: 1, background: COLORS.border }} />
@@ -2694,6 +3317,9 @@ export default function CatalystApp() {
 
   if (!loggedIn) return <LoginPage onLogin={(u) => { setUser(u); setLoggedIn(true); }} />;
 
+  // Authenticated app is wrapped below in <SettingsProvider> so every Toggle
+  // with a recognized label/settingKey auto-persists to /api/settings.
+
   const navItems = [
     { section: "Overview" },
     { name: "Dashboard", icon: "📊" },
@@ -2730,6 +3356,7 @@ export default function CatalystApp() {
   };
 
   return (
+    <SettingsProvider>
     <div className="catalyst-app" style={S.app}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
 
@@ -2776,5 +3403,6 @@ export default function CatalystApp() {
         <div className="catalyst-content" style={S.content}>{renderPage()}</div>
       </div>
     </div>
+    </SettingsProvider>
   );
 }
