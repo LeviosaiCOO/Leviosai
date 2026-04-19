@@ -284,7 +284,7 @@ function DrillDownPanel({ title, description, onClose, filter, emptyText = "No l
                 <div key={l.id} style={{ padding: 14, border: `1px solid ${COLORS.border}`, borderRadius: 10, background: COLORS.surfaceAlt }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
                     <div>
-                      <div style={{ fontSize: 14, fontWeight: 600 }}>{l.name || l.fullName || "Unnamed lead"}</div>
+                      <div style={{ fontSize: 14, fontWeight: 600 }}>{[l.firstName, l.lastName].filter(Boolean).join(" ") || l.name || l.fullName || "Unnamed lead"}</div>
                       <div style={{ fontSize: 12, color: COLORS.textMuted }}>{l.email || "—"} · {l.phone || "—"}</div>
                     </div>
                     <span style={S.badge(statusColors[(l.status || "").toLowerCase()] || COLORS.textMuted)}>{l.status || "—"}</span>
@@ -483,21 +483,37 @@ function ErrorState({ message = "Something went wrong", onRetry }) {
 function VoicePreviewButton({ voiceName, voiceGender, accent, sample, fullWidth = false }) {
   const [speaking, setSpeaking] = useState(false);
   const [supported, setSupported] = useState(true);
+  const [voices, setVoices] = useState([]);
 
+  // Chrome populates voices asynchronously — listen for voiceschanged + poll
   useEffect(() => {
-    if (typeof window === "undefined" || !window.speechSynthesis) setSupported(false);
+    if (typeof window === "undefined" || !window.speechSynthesis) {
+      setSupported(false);
+      return;
+    }
+    const load = () => {
+      const vs = window.speechSynthesis.getVoices();
+      if (vs && vs.length) setVoices(vs);
+    };
+    load();
+    window.speechSynthesis.addEventListener?.("voiceschanged", load);
+    const t = setInterval(() => {
+      const vs = window.speechSynthesis.getVoices();
+      if (vs && vs.length) { setVoices(vs); clearInterval(t); }
+    }, 250);
+    return () => {
+      clearInterval(t);
+      window.speechSynthesis.removeEventListener?.("voiceschanged", load);
+    };
   }, []);
 
   const pickVoice = () => {
-    if (!window.speechSynthesis) return null;
-    const voices = window.speechSynthesis.getVoices();
     if (!voices.length) return null;
     const wantFemale = voiceGender === "Female";
     const wantBritish = accent === "British";
-    // Score each voice based on how well it matches desired profile
     const scored = voices.map((v) => {
       let score = 0;
-      const name = v.name.toLowerCase();
+      const name = (v.name || "").toLowerCase();
       if (wantBritish && v.lang?.startsWith("en-GB")) score += 4;
       if (!wantBritish && v.lang?.startsWith("en-US")) score += 3;
       if (v.lang?.startsWith("en")) score += 1;
@@ -510,22 +526,32 @@ function VoicePreviewButton({ voiceName, voiceGender, accent, sample, fullWidth 
 
   const speak = (e) => {
     e?.stopPropagation?.();
-    if (!window.speechSynthesis) return;
-    if (speaking) {
-      window.speechSynthesis.cancel();
+    e?.preventDefault?.();
+    const synth = window.speechSynthesis;
+    if (!synth) return;
+
+    if (speaking || synth.speaking) {
+      synth.cancel();
       setSpeaking(false);
       return;
     }
-    const utter = new SpeechSynthesisUtterance(sample || `Hi, this is ${voiceName} from Leviosai. I'm an AI assistant, and I'm here to help revive and qualify your leads. Thanks for taking a listen — I hope my tone is a match for what you're looking for.`);
+
+    const text = sample || `Hi, this is ${voiceName} from Leviosai. I'm an AI assistant, and I'm here to help revive and qualify your leads. Thanks for taking a listen — I hope my tone is a match for what you're looking for.`;
+    const utter = new SpeechSynthesisUtterance(text);
     const voice = pickVoice();
-    if (voice) utter.voice = voice;
+    if (voice) { utter.voice = voice; utter.lang = voice.lang || "en-US"; }
+    else { utter.lang = accent === "British" ? "en-GB" : "en-US"; }
     utter.rate = 1.0;
     utter.pitch = voiceGender === "Female" ? 1.05 : 0.95;
+    utter.volume = 1.0;
     utter.onend = () => setSpeaking(false);
-    utter.onerror = () => setSpeaking(false);
-    window.speechSynthesis.cancel();
-    window.speechSynthesis.speak(utter);
+    utter.onerror = (ev) => { console.warn("Voice preview error:", ev.error); setSpeaking(false); };
+
+    // Chrome bug workaround: resume in case synth was suspended by a previous tab switch
+    if (synth.paused) synth.resume();
     setSpeaking(true);
+    // Small delay lets Chrome register the user gesture before speak()
+    setTimeout(() => synth.speak(utter), 50);
   };
 
   if (!supported) return null;
@@ -940,6 +966,325 @@ function DashboardPage({ setPage }) {
 }
 
 // ============================================================
+// LEAD ACTION MODALS — branded replacements for window.prompt/alert
+// ============================================================
+
+// Shared branded shell for lead-action modals. Single header styling so SMS,
+// Email, Call confirm, AI score and Edit Lead all feel like one product.
+function LeadActionShell({ icon, title, subtitle, lead, onClose, children, width = 560 }) {
+  return (
+    <div style={S.modal} onClick={onClose}>
+      <div style={{ ...S.modalContent, maxWidth: width, padding: 0, overflow: "hidden" }} onClick={(e) => e.stopPropagation()}>
+        <div style={{
+          padding: "18px 24px",
+          background: `linear-gradient(135deg, ${COLORS.orange}, ${COLORS.orangeDark})`,
+          color: "#fff",
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{ width: 40, height: 40, borderRadius: 10, background: "rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>{icon}</div>
+            <div>
+              <div style={{ fontSize: 16, fontWeight: 700, lineHeight: 1.2 }}>{title}</div>
+              {subtitle && <div style={{ fontSize: 12, opacity: 0.9, marginTop: 2 }}>{subtitle}</div>}
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: "rgba(255,255,255,0.15)", border: "none", color: "#fff", cursor: "pointer", fontSize: 18, width: 30, height: 30, borderRadius: 8 }}>✕</button>
+        </div>
+        {lead && (
+          <div style={{ padding: "12px 24px", background: COLORS.surfaceAlt, borderBottom: `1px solid ${COLORS.border}`, display: "flex", alignItems: "center", gap: 10, fontSize: 12 }}>
+            <div style={{ width: 28, height: 28, borderRadius: 14, background: COLORS.orangeGlow, color: COLORS.orange, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 12 }}>{(lead.firstName || lead.name || "?")[0]}</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 600, color: COLORS.text }}>{lead.name || [lead.firstName, lead.lastName].filter(Boolean).join(" ")}</div>
+              <div style={{ color: COLORS.textMuted, fontSize: 11 }}>{lead.email || "—"} · {lead.phone || "—"}</div>
+            </div>
+          </div>
+        )}
+        <div style={{ padding: 24 }}>{children}</div>
+      </div>
+    </div>
+  );
+}
+
+// SMS + Email composer. One component handles both via the `channel` prop.
+function SendMessageModal({ lead, channel, onClose, onSent }) {
+  const isEmail = channel === "email";
+  const [subject, setSubject] = useState("");
+  const [body, setBody] = useState("");
+  const [generating, setGenerating] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState("");
+
+  const generate = async () => {
+    setError(""); setGenerating(true);
+    try {
+      const gen = await aiApi.generateMessage(lead.id, channel);
+      if (isEmail) setSubject(gen.subject || "Following up");
+      setBody(gen.message || "");
+    } catch (e) {
+      setError(e.message || "Could not generate with AI.");
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const send = async () => {
+    if (!body.trim()) { setError("Message body is required."); return; }
+    if (isEmail && !subject.trim()) { setError("Subject is required."); return; }
+    setError(""); setSending(true);
+    try {
+      if (isEmail) await messagingApi.sendEmail(lead.id, subject, body, true);
+      else await messagingApi.sendSMS(lead.id, body, true);
+      onSent && onSent({ channel });
+      onClose();
+    } catch (e) {
+      setError(e.message || "Failed to send.");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <LeadActionShell
+      icon={isEmail ? "✉️" : "💬"}
+      title={isEmail ? "Send Email" : "Send SMS"}
+      subtitle={isEmail ? `Delivered via Resend · ${lead.email || "no email on file"}` : `Delivered via Twilio · ${lead.phone || "no phone on file"}`}
+      lead={lead}
+      onClose={onClose}
+    >
+      {error && <div style={{ padding: "10px 12px", borderRadius: 8, background: `${COLORS.red}22`, color: COLORS.red, fontSize: 12, marginBottom: 14 }}>{error}</div>}
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
+        <button type="button" onClick={generate} disabled={generating}
+          style={{ ...S.btn("ghost"), fontSize: 11, padding: "6px 12px", display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <span>🤖</span><span>{generating ? "Generating…" : "Generate with AI"}</span>
+        </button>
+      </div>
+      {isEmail && (
+        <div style={{ marginBottom: 14 }}>
+          <label style={{ fontSize: 11, color: COLORS.textMuted, display: "block", marginBottom: 6 }}>Subject</label>
+          <input style={S.input} value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Quick follow-up" />
+        </div>
+      )}
+      <div style={{ marginBottom: 14 }}>
+        <label style={{ fontSize: 11, color: COLORS.textMuted, display: "block", marginBottom: 6 }}>{isEmail ? "Body" : "Message"}</label>
+        <textarea
+          style={{ ...S.input, minHeight: isEmail ? 180 : 110, fontFamily: "inherit", resize: "vertical", padding: 12 }}
+          value={body} onChange={(e) => setBody(e.target.value)}
+          placeholder={isEmail ? "Write your email…" : "Keep it short and TCPA-compliant — reply STOP to opt out."}
+          maxLength={isEmail ? 5000 : 320}
+        />
+        {!isEmail && <div style={{ fontSize: 10, color: COLORS.textDim, textAlign: "right", marginTop: 4 }}>{body.length}/320</div>}
+      </div>
+      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+        <button onClick={onClose} style={S.btn("ghost")}>Cancel</button>
+        <button onClick={send} disabled={sending} style={S.btn("primary")}>
+          {sending ? "Sending…" : isEmail ? "✉️ Send Email" : "💬 Send SMS"}
+        </button>
+      </div>
+    </LeadActionShell>
+  );
+}
+
+// Voice-AI call confirmation modal (branded replacement for confirm/alert).
+function CallConfirmModal({ lead, onClose, onCalled }) {
+  const [placing, setPlacing] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState("");
+
+  const place = async () => {
+    setError(""); setPlacing(true);
+    try {
+      const r = await messagingApi.initiateCall(lead.id);
+      setResult(r);
+      onCalled && onCalled(r);
+    } catch (e) {
+      setError(e.message || "Could not start call.");
+    } finally {
+      setPlacing(false);
+    }
+  };
+
+  return (
+    <LeadActionShell
+      icon="📞"
+      title="Voice AI Call"
+      subtitle={`Dial ${lead.phone || "(no phone on file)"}`}
+      lead={lead}
+      onClose={onClose}
+      width={480}
+    >
+      {error && <div style={{ padding: "10px 12px", borderRadius: 8, background: `${COLORS.red}22`, color: COLORS.red, fontSize: 12, marginBottom: 14 }}>{error}</div>}
+      {!result ? (
+        <>
+          <p style={{ fontSize: 13, color: COLORS.textMuted, marginTop: 0, marginBottom: 16, lineHeight: 1.5 }}>
+            Your Leviosai Voice AI agent will dial this lead, disclose it's an AI per TCPA, and handle the conversation with your configured talk track. The call will be recorded and transcribed.
+          </p>
+          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+            <button onClick={onClose} style={S.btn("ghost")}>Cancel</button>
+            <button onClick={place} disabled={placing} style={S.btn("primary")}>
+              {placing ? "Connecting…" : "📞 Start Call"}
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <div style={{ padding: 14, borderRadius: 10, background: `${COLORS.green}15`, border: `1px solid ${COLORS.green}55`, marginBottom: 16 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.green, marginBottom: 4 }}>
+              {result.twilioConfigured ? "✓ Call initiated" : "✓ Call logged (demo mode)"}
+            </div>
+            <div style={{ fontSize: 12, color: COLORS.textMuted }}>
+              {result.twilioConfigured
+                ? `Twilio SID: ${result.call?.sid || "—"}`
+                : "Twilio is not configured in this environment — this call was logged but not dialed."}
+            </div>
+          </div>
+          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <button onClick={onClose} style={S.btn("primary")}>Done</button>
+          </div>
+        </>
+      )}
+    </LeadActionShell>
+  );
+}
+
+// AI score result modal (branded replacement for alert).
+function ScoreResultModal({ lead, onClose }) {
+  const [loading, setLoading] = useState(true);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    aiApi.scoreLead(lead.id)
+      .then((r) => { if (!cancelled) setResult(r); })
+      .catch((e) => { if (!cancelled) setError(e.message || "Scoring failed."); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [lead.id]);
+
+  const tempColor = result?.temperature === "hot" ? COLORS.red : result?.temperature === "warm" ? COLORS.orange : COLORS.blue;
+
+  return (
+    <LeadActionShell icon="🧠" title="AI Lead Score" subtitle="Powered by Claude Sonnet" lead={lead} onClose={onClose} width={520}>
+      {loading && <LoadingState message="Analyzing lead…" />}
+      {error && <div style={{ padding: "10px 12px", borderRadius: 8, background: `${COLORS.red}22`, color: COLORS.red, fontSize: 12, marginBottom: 14 }}>{error}</div>}
+      {result && (
+        <>
+          <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 18 }}>
+            <div style={{ width: 88, height: 88, borderRadius: 44, background: `conic-gradient(${tempColor} ${result.score * 3.6}deg, ${COLORS.surfaceAlt} 0)`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <div style={{ width: 72, height: 72, borderRadius: 36, background: COLORS.surface, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+                <div style={{ fontSize: 22, fontWeight: 800, color: tempColor }}>{result.score}</div>
+                <div style={{ fontSize: 9, color: COLORS.textMuted }}>/100</div>
+              </div>
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 4 }}>Temperature</div>
+              <div style={{ ...S.badge(tempColor), fontSize: 13, padding: "4px 12px", display: "inline-block" }}>{(result.temperature || "").toUpperCase()}</div>
+            </div>
+          </div>
+          <div style={{ padding: 14, borderRadius: 10, background: COLORS.surfaceAlt, fontSize: 13, lineHeight: 1.6, color: COLORS.text, marginBottom: 16 }}>
+            {result.reasoning || "No additional notes."}
+          </div>
+          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <button onClick={onClose} style={S.btn("primary")}>Done</button>
+          </div>
+        </>
+      )}
+    </LeadActionShell>
+  );
+}
+
+// Edit Lead modal — mirrors Add Lead fields but PATCHes existing lead.
+function EditLeadModal({ lead, onClose, onSaved }) {
+  const [form, setForm] = useState({
+    firstName: lead.firstName || "",
+    lastName: lead.lastName || "",
+    email: lead.email || "",
+    phone: lead.phone || "",
+    source: lead.source || "",
+    status: lead.rawStatus || lead.status || "new",
+    notes: lead.notes || "",
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const save = async () => {
+    setError("");
+    if (!form.firstName.trim() || !form.lastName.trim() || !form.email.trim()) {
+      setError("First name, last name, and email are required."); return;
+    }
+    setSaving(true);
+    try {
+      await leadsApi.update(lead.id, form);
+      onSaved && onSaved();
+      onClose();
+    } catch (e) {
+      setError(e.message || "Failed to save.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <LeadActionShell icon="✏️" title="Edit Lead" subtitle="Update contact info and status" lead={lead} onClose={onClose} width={600}>
+      {error && <div style={{ padding: "10px 12px", borderRadius: 8, background: `${COLORS.red}22`, color: COLORS.red, fontSize: 12, marginBottom: 14 }}>{error}</div>}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+        <div>
+          <label style={{ fontSize: 11, color: COLORS.textMuted, display: "block", marginBottom: 6 }}>First Name *</label>
+          <input style={S.input} value={form.firstName} onChange={(e) => setForm(f => ({ ...f, firstName: e.target.value }))} />
+        </div>
+        <div>
+          <label style={{ fontSize: 11, color: COLORS.textMuted, display: "block", marginBottom: 6 }}>Last Name *</label>
+          <input style={S.input} value={form.lastName} onChange={(e) => setForm(f => ({ ...f, lastName: e.target.value }))} />
+        </div>
+      </div>
+      <div style={{ marginBottom: 14 }}>
+        <label style={{ fontSize: 11, color: COLORS.textMuted, display: "block", marginBottom: 6 }}>Email *</label>
+        <input style={S.input} type="email" value={form.email} onChange={(e) => setForm(f => ({ ...f, email: e.target.value }))} />
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+        <div>
+          <label style={{ fontSize: 11, color: COLORS.textMuted, display: "block", marginBottom: 6 }}>Phone</label>
+          <input style={S.input} value={form.phone} onChange={(e) => setForm(f => ({ ...f, phone: e.target.value }))} />
+        </div>
+        <div>
+          <label style={{ fontSize: 11, color: COLORS.textMuted, display: "block", marginBottom: 6 }}>Source</label>
+          <select style={{ ...S.select, width: "100%" }} value={form.source} onChange={(e) => setForm(f => ({ ...f, source: e.target.value }))}>
+            <option value="">—</option>
+            <option value="Manual Entry">Manual Entry</option>
+            <option value="Website">Website</option>
+            <option value="Referral">Referral</option>
+            <option value="Cold Call">Cold Call</option>
+            <option value="Facebook Ad">Facebook Ad</option>
+            <option value="Google Ad">Google Ad</option>
+            <option value="CSV Import">CSV Import</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+      </div>
+      <div style={{ marginBottom: 14 }}>
+        <label style={{ fontSize: 11, color: COLORS.textMuted, display: "block", marginBottom: 6 }}>Status</label>
+        <select style={{ ...S.select, width: "100%" }} value={form.status} onChange={(e) => setForm(f => ({ ...f, status: e.target.value }))}>
+          <option value="new">New</option>
+          <option value="contacted">Aged (contacted)</option>
+          <option value="qualified">Revived (qualified)</option>
+          <option value="proposal">Appointment Set (proposal)</option>
+          <option value="won">Won</option>
+          <option value="lost">Dead (lost)</option>
+        </select>
+      </div>
+      <div style={{ marginBottom: 14 }}>
+        <label style={{ fontSize: 11, color: COLORS.textMuted, display: "block", marginBottom: 6 }}>Notes</label>
+        <textarea style={{ ...S.input, minHeight: 90, fontFamily: "inherit", padding: 12 }} value={form.notes} onChange={(e) => setForm(f => ({ ...f, notes: e.target.value }))} />
+      </div>
+      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+        <button onClick={onClose} style={S.btn("ghost")}>Cancel</button>
+        <button onClick={save} disabled={saving} style={S.btn("primary")}>{saving ? "Saving…" : "Save Changes"}</button>
+      </div>
+    </LeadActionShell>
+  );
+}
+
+// ============================================================
 // LEADS — with Features 2, 3
 // ============================================================
 function LeadsPage() {
@@ -955,6 +1300,8 @@ function LeadsPage() {
   const [showReplay, setShowReplay] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  // action: { kind: 'sms'|'email'|'call'|'score'|'edit', lead }
+  const [action, setAction] = useState(null);
 
   const statusMap = { "New": "new", "Dead": "lost", "Aged": "contacted", "Revived": "qualified", "Appointment Set": "proposal" };
   const statusLabelMap = { "new": "New", "lost": "Dead", "contacted": "Aged", "qualified": "Revived", "proposal": "Appointment Set", "won": "Revived" };
@@ -1060,19 +1407,10 @@ function LeadsPage() {
                 </td>
                 <td style={S.td}>
                   <div style={{ display: "flex", gap: 6 }} onClick={(e) => e.stopPropagation()}>
-                    <button style={{ ...S.btn("ghost"), padding: "5px 10px", fontSize: 11 }} onClick={async () => {
-                      try { await messagingApi.initiateCall(l.id); alert("Call initiated!"); } catch (e) { alert(e.message); }
-                    }}>📞</button>
-                    <button style={{ ...S.btn("ghost"), padding: "5px 10px", fontSize: 11 }} onClick={async () => {
-                      const msg = prompt(`SMS to ${l.name}:`);
-                      if (msg) { try { await messagingApi.sendSMS(l.id, msg); alert("SMS sent!"); } catch (e) { alert(e.message); } }
-                    }}>💬</button>
-                    <button style={{ ...S.btn("ghost"), padding: "5px 10px", fontSize: 11 }} onClick={async () => {
-                      const subject = prompt(`Email subject for ${l.name}:`);
-                      if (!subject) return;
-                      const body = prompt("Email body:");
-                      if (body) { try { await messagingApi.sendEmail(l.id, subject, body); alert("Email sent!"); } catch (e) { alert(e.message); } }
-                    }}>✉️</button>
+                    <button title="Voice AI call" style={{ ...S.btn("ghost"), padding: "5px 10px", fontSize: 11 }} onClick={() => setAction({ kind: "call", lead: l })}>📞</button>
+                    <button title="Send SMS" style={{ ...S.btn("ghost"), padding: "5px 10px", fontSize: 11 }} onClick={() => setAction({ kind: "sms", lead: l })}>💬</button>
+                    <button title="Send email" style={{ ...S.btn("ghost"), padding: "5px 10px", fontSize: 11 }} onClick={() => setAction({ kind: "email", lead: l })}>✉️</button>
+                    <button title="Edit lead" style={{ ...S.btn("ghost"), padding: "5px 10px", fontSize: 11 }} onClick={() => setAction({ kind: "edit", lead: l })}>✏️</button>
                   </div>
                 </td>
               </tr>
@@ -1226,28 +1564,11 @@ function LeadsPage() {
                   </div>
                 </div>
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                  <button style={S.btn("primary")} onClick={async () => {
-                    try { const r = await messagingApi.initiateCall(selectedLead.id); alert(r.twilioConfigured ? `Call initiated! SID: ${r.call.sid}` : "Call logged. Configure Twilio in .env to make real calls."); } catch (e) { alert(e.message); }
-                  }}>📞 Voice AI Call</button>
-                  <button style={S.btn("secondary")} onClick={async () => {
-                    try {
-                      const gen = await aiApi.generateMessage(selectedLead.id, "sms");
-                      const msg = prompt("AI-generated SMS (edit if needed):", gen.message);
-                      if (msg) { await messagingApi.sendSMS(selectedLead.id, msg, true); alert("SMS sent!"); fetchLeads(); }
-                    } catch (e) { alert(e.message); }
-                  }}>💬 Send SMS</button>
-                  <button style={S.btn("secondary")} onClick={async () => {
-                    try {
-                      const gen = await aiApi.generateMessage(selectedLead.id, "email");
-                      const subject = prompt("Subject:", gen.subject || "Following up");
-                      if (!subject) return;
-                      const body = prompt("Email body (AI-generated, edit if needed):", gen.message);
-                      if (body) { await messagingApi.sendEmail(selectedLead.id, subject, body, true); alert("Email sent!"); fetchLeads(); }
-                    } catch (e) { alert(e.message); }
-                  }}>✉️ Send Email</button>
-                  <button style={S.btn("teal")} onClick={async () => {
-                    try { const r = await aiApi.scoreLead(selectedLead.id); alert(`AI Score: ${r.score}/100 | Temp: ${r.temperature}\n${r.reasoning}`); fetchLeads(); setSelectedLead(null); } catch (e) { alert(e.message); }
-                  }}>🧠 AI Score</button>
+                  <button style={S.btn("primary")} onClick={() => setAction({ kind: "call", lead: selectedLead })}>📞 Voice AI Call</button>
+                  <button style={S.btn("secondary")} onClick={() => setAction({ kind: "sms", lead: selectedLead })}>💬 Send SMS</button>
+                  <button style={S.btn("secondary")} onClick={() => setAction({ kind: "email", lead: selectedLead })}>✉️ Send Email</button>
+                  <button style={S.btn("teal")} onClick={() => setAction({ kind: "score", lead: selectedLead })}>🧠 AI Score</button>
+                  <button style={S.btn("ghost")} onClick={() => setAction({ kind: "edit", lead: selectedLead })}>✏️ Edit Lead</button>
                   <button style={S.btn("success")}>📅 Set Appointment</button>
                 </div>
               </>
@@ -1257,6 +1578,32 @@ function LeadsPage() {
             {showReplay && <ConversationReplay conversations={selectedLead.conversations} leadName={selectedLead.name} />}
           </div>
         </div>
+      )}
+
+      {/* Branded lead-action modals */}
+      {action?.kind === "sms" && (
+        <SendMessageModal lead={action.lead} channel="sms"
+          onClose={() => setAction(null)}
+          onSent={() => fetchLeads()} />
+      )}
+      {action?.kind === "email" && (
+        <SendMessageModal lead={action.lead} channel="email"
+          onClose={() => setAction(null)}
+          onSent={() => fetchLeads()} />
+      )}
+      {action?.kind === "call" && (
+        <CallConfirmModal lead={action.lead}
+          onClose={() => setAction(null)}
+          onCalled={() => fetchLeads()} />
+      )}
+      {action?.kind === "score" && (
+        <ScoreResultModal lead={action.lead}
+          onClose={() => { setAction(null); fetchLeads(); }} />
+      )}
+      {action?.kind === "edit" && (
+        <EditLeadModal lead={action.lead}
+          onClose={() => setAction(null)}
+          onSaved={() => { fetchLeads(); setSelectedLead(null); }} />
       )}
     </div>
   );
