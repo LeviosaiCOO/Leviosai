@@ -4,7 +4,7 @@ import { requireAuth } from "./auth.js";
 import { Reactor } from "../reactor/reactor.js";
 import { db } from "../lib/db.js";
 import { organizations } from "../lib/schema.js";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 const router = Router();
 
@@ -349,17 +349,42 @@ router.get("/api/activity", requireAuth, async (req, res) => {
 
 // ─── HEALTH CHECK (no auth required) ────────────────────────────────────────
 
+// Liveness healthcheck — used by Railway to decide if a deploy is healthy.
+// MUST return 200 as long as the web server itself is up. The app is designed
+// to boot and serve without a database, so a transient DB outage (e.g. the
+// free-tier Supabase idle-pausing) must NOT fail this check — otherwise every
+// deploy during a DB blip gets rolled back. DB state is reported as a field,
+// not as the HTTP status. Use /api/ready for a strict DB-gated check.
 router.get("/api/health", async (_req, res) => {
+  let database = "disconnected";
+  let dbError: string | undefined;
+  try {
+    // Lightweight probe with its own short timeout so the healthcheck never
+    // hangs waiting on an unreachable DB.
+    await Promise.race([
+      db.execute(sql`SELECT 1`),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("db probe timeout")), 3000)),
+    ]);
+    database = "connected";
+  } catch (error: any) {
+    dbError = error.message;
+  }
+  res.status(200).json({
+    status: "ok",
+    database,
+    ...(dbError ? { dbError } : {}),
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// Strict readiness check — 200 only if the DB is reachable. NOT wired to the
+// Railway healthcheck; use for manual/monitoring "is everything up" probes.
+router.get("/api/ready", async (_req, res) => {
   try {
     const stats = await storage.getDashboardStats();
-    res.json({
-      status: "ok",
-      database: "connected",
-      totalLeads: stats.totalLeads,
-      timestamp: new Date().toISOString(),
-    });
+    res.json({ status: "ready", database: "connected", totalLeads: stats.totalLeads, timestamp: new Date().toISOString() });
   } catch (error: any) {
-    res.status(500).json({ status: "error", database: "disconnected", error: error.message });
+    res.status(503).json({ status: "not-ready", database: "disconnected", error: error.message });
   }
 });
 
