@@ -741,6 +741,9 @@ function LoginPage({ onLogin }) {
   const [pass, setPass] = useState("catalyst2026");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  // "db" = infrastructure/database unavailable (amber, retryable);
+  // "auth" = bad credentials or other error (red).
+  const [errorKind, setErrorKind] = useState("auth");
 
   const handleLogin = async () => {
     setLoading(true);
@@ -750,6 +753,8 @@ function LoginPage({ onLogin }) {
       setToken(res.token);
       onLogin(res.user);
     } catch (err) {
+      const isDbDown = err.code === "DB_UNAVAILABLE" || err.status === 503;
+      setErrorKind(isDbDown ? "db" : "auth");
       setError(err.message || "Invalid credentials");
     } finally {
       setLoading(false);
@@ -761,7 +766,20 @@ function LoginPage({ onLogin }) {
       <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 20, padding: "48px 40px", width: "100%", maxWidth: 400, textAlign: "center" }}>
         <Logo />
         <p style={{ color: COLORS.textMuted, fontSize: 13, margin: "12px 0 32px", lineHeight: 1.5 }}>Agentic AI Sales & Lead Revival Platform</p>
-        {error && <div style={{ padding: "8px 12px", borderRadius: 8, background: `${COLORS.red}22`, color: COLORS.red, fontSize: 12, marginBottom: 16 }}>{error}</div>}
+        {error && (
+          <div style={{ padding: "10px 12px", borderRadius: 8, background: errorKind === "db" ? `${COLORS.yellow}22` : `${COLORS.red}22`, color: errorKind === "db" ? COLORS.yellow : COLORS.red, fontSize: 12, marginBottom: 16, textAlign: "left" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 600, marginBottom: errorKind === "db" ? 4 : 0 }}>
+              <span>{errorKind === "db" ? "⏳" : "⚠️"}</span>
+              <span>{errorKind === "db" ? "Service starting up" : "Sign-in failed"}</span>
+            </div>
+            <div style={{ opacity: 0.9 }}>{error}</div>
+            {errorKind === "db" && (
+              <button onClick={handleLogin} disabled={loading} style={{ ...S.btn("ghost"), fontSize: 11, padding: "5px 12px", marginTop: 8 }}>
+                {loading ? "Retrying…" : "↻ Retry"}
+              </button>
+            )}
+          </div>
+        )}
         <div style={{ textAlign: "left", marginBottom: 16 }}>
           <label style={{ fontSize: 12, color: COLORS.textMuted, fontWeight: 500, display: "block", marginBottom: 6 }}>Email</label>
           <input style={S.input} value={email} onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleLogin()} />
@@ -2651,7 +2669,7 @@ function InvoiceDetailPage({ invoice, onBack, onPay }) {
         <tr><td colspan="3" style="text-align:right">Show-Up Guarantee Credits (${invoice.noShows} no-shows × $200)</td><td>-$${totals.credits}</td></tr>
         <tr><td colspan="3" style="text-align:right" class="total">TOTAL DUE</td><td class="total">$${totals.total.toLocaleString()}</td></tr>
       </table>
-      <p style="color:#888;font-size:12px;margin-top:40px">Leviosai, Inc. · christian@leviosai.io · Part of The Reaction Stack</p>
+      <p style="color:#888;font-size:12px;margin-top:40px">Leviosai, Inc. · christian@leviosalabs.io · Part of The Reaction Stack</p>
       </body></html>`;
     const blob = new Blob([html], { type: "text/html" });
     const url = URL.createObjectURL(blob);
@@ -2685,7 +2703,7 @@ function InvoiceDetailPage({ invoice, onBack, onPay }) {
               <div style={{ fontSize: 28, fontWeight: 700, background: "linear-gradient(135deg, #f39c12, #d35400)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", letterSpacing: -0.5 }}>catalyst</div>
             </div>
             <div style={{ fontSize: 11, color: "#999", marginTop: 4 }}>Leviosai, Inc.</div>
-            <div style={{ fontSize: 11, color: "#999" }}>christian@leviosai.io</div>
+            <div style={{ fontSize: 11, color: "#999" }}>christian@leviosalabs.io</div>
           </div>
           <div style={{ textAlign: "right" }}>
             <div style={{ fontSize: 32, fontWeight: 700, color: "#e67e22", letterSpacing: -0.5 }}>INVOICE</div>
@@ -2796,7 +2814,7 @@ function InvoiceDetailPage({ invoice, onBack, onPay }) {
 
         {/* Footer */}
         <div style={{ borderTop: "1px solid #eee", paddingTop: 24, marginTop: 32, textAlign: "center", fontSize: 11, color: "#999" }}>
-          <div>Thank you for your business! Questions? Email <a href="mailto:christian@leviosai.io" style={{ color: "#e67e22" }}>christian@leviosai.io</a></div>
+          <div>Thank you for your business! Questions? Email <a href="mailto:christian@leviosalabs.io" style={{ color: "#e67e22" }}>christian@leviosalabs.io</a></div>
           <div style={{ marginTop: 4 }}>Leviosai, Inc. · Part of The Reaction Stack</div>
         </div>
       </div>

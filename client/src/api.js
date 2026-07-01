@@ -32,7 +32,10 @@ async function request(path, options = {}) {
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error || "Request failed");
+    const e = new Error(err.error || "Request failed");
+    e.status = res.status;
+    e.code = err.code; // e.g. "DB_UNAVAILABLE" for a paused/unreachable database
+    throw e;
   }
 
   return res.json();

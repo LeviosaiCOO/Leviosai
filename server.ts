@@ -8,6 +8,7 @@ import { initSentry, Sentry } from "./lib/sentry.js";
 // Initialize Sentry before anything else
 initSentry();
 import { checkDatabaseConnection, closeDatabaseConnection } from "./lib/db.js";
+import { startDbKeepalive } from "./lib/keepalive.js";
 import apiRoutes from "./routes/api.js";
 import authRoutes from "./routes/auth.js";
 import messagingRoutes from "./routes/messaging.js";
@@ -86,6 +87,9 @@ async function start() {
   if (!dbOk) {
     console.warn("⚠️  Database unavailable — API routes will fail but frontend will load. Check your DATABASE_URL.");
   }
+
+  // Keep Supabase from idle-pausing (see lib/keepalive.ts)
+  startDbKeepalive();
 
   // Start Reactor (agent orchestrator)
   console.log("\n⚡ Initializing Reactor...");

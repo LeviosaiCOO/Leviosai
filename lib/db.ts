@@ -37,6 +37,26 @@ pool.on("error", (err) => {
 // Initialize Drizzle with full schema (enables relational queries)
 export const db = drizzle(pool, { schema });
 
+// Classify an error as "the database is unreachable / misconfigured" vs a
+// normal query error. Used by routes to return a clear 503 ("service starting
+// up / database unavailable") instead of a cryptic 500 with a raw pg message —
+// which is what a paused Supabase project or stale password looks like.
+export function isDbConnectionError(err: any): boolean {
+  if (!err) return false;
+  const code = err.code || "";
+  const msg = (err.message || "").toLowerCase();
+  return (
+    ["ENOTFOUND", "ECONNREFUSED", "ETIMEDOUT", "ECONNRESET", "EAI_AGAIN", "28P01", "3D000"].includes(code) ||
+    msg.includes("password authentication failed") ||
+    msg.includes("tenant or user not found") ||
+    msg.includes("tenant/user") ||
+    msg.includes("connection terminated") ||
+    msg.includes("timeout") ||
+    msg.includes("getaddrinfo") ||
+    msg.includes("econnrefused")
+  );
+}
+
 // Health check function
 export async function checkDatabaseConnection(): Promise<boolean> {
   try {

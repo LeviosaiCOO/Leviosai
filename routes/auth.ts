@@ -1,12 +1,19 @@
 import { Router, Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
-import { db } from "../lib/db.js";
+import { db, isDbConnectionError } from "../lib/db.js";
 import { users, organizations } from "../lib/schema.js";
 import { eq } from "drizzle-orm";
 
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || "catalyst-dev-secret-change-in-production";
+
+// Standard 503 body when the database can't be reached. The frontend keys off
+// `code: "DB_UNAVAILABLE"` to show an infra message instead of "invalid login".
+const DB_DOWN = {
+  code: "DB_UNAVAILABLE",
+  error: "Service temporarily unavailable — the database is waking up. Please try again in a moment.",
+};
 
 // Extend Express Request with auth fields
 declare global {
@@ -57,6 +64,7 @@ router.post("/api/auth/register", async (req: Request, res: Response) => {
       },
     });
   } catch (error: any) {
+    if (isDbConnectionError(error)) return res.status(503).json(DB_DOWN);
     res.status(500).json({ error: error.message });
   }
 });
@@ -91,6 +99,7 @@ router.post("/api/auth/login", async (req: Request, res: Response) => {
       },
     });
   } catch (error: any) {
+    if (isDbConnectionError(error)) return res.status(503).json(DB_DOWN);
     res.status(500).json({ error: error.message });
   }
 });
